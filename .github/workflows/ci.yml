@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: go vet ./...
+      - run: go test ./...
+      - name: no private imports (the module must build from ABI.md alone)
+        run: |
+          ! grep -rn "shellcade/shellcade" --include="*.go" . || (echo "FORBIDDEN private import" && exit 1)
+      - name: native example builds
+        run: go build ./examples/pokies
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: acifani/setup-tinygo@v2
+        with: { tinygo-version: "0.41.0" }
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: example builds to wasm (dev profile)
+        run: |
+          cd examples/pokies
+          tinygo build -opt=1 -no-debug -gc=leaking -o pokies.wasm -target wasip1 -buildmode=c-shared .
+          ls -la pokies.wasm

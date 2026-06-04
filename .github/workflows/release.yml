@@ -1,0 +1,29 @@
+name: Release
+on:
+  push:
+    branches: [main]
+
+concurrency: release-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      # With pending changesets: opens/updates the "Version Packages" PR.
+      # With none (the PR just merged): runs the publish script, which pushes
+      # the vX.Y.Z tag — and the tag triggers the GoReleaser workflow.
+      - uses: changesets/action@v1
+        with:
+          version: npx changeset version
+          publish: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

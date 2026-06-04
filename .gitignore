@@ -1,2 +1,4 @@
 *.wasm
 go.work*
+node_modules/
+dist/

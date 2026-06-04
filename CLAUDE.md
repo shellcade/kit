@@ -29,6 +29,14 @@ Public documentation in this repo should be rich and author-focused:
 the dev loop, wake idioms, services, multiplayer testing), `ABI.md` (the
 normative contract). Improving these is always in scope.
 
+## Releasing
+
+Versions/changelogs are driven by **changesets**: every user-visible change
+adds a `.changeset/*.md` (run `npx changeset`). Merging to main lets the
+changesets action open a Version Packages PR; merging THAT pushes the
+`vX.Y.Z` tag, and **GoReleaser** builds the `gamekit` CLI binaries onto the
+GitHub release. Never hand-edit CHANGELOG.md or push tags manually.
+
 ## Build & test
 
 ```sh
