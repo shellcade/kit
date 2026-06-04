@@ -25,7 +25,8 @@ import (
 func Main(g Game) {
 	seed := flag.Int64("seed", 0, "room RNG seed (0 = time-based)")
 	heartbeat := flag.Duration("heartbeat", 50*time.Millisecond, "wake cadence")
-	handle := flag.String("handle", "dev", "player handle")
+	handle := flag.String("handle", "dev", "player handle (seat 1)")
+	seats := flag.Int("seats", 1, "players joined to the room; Ctrl-T switches the active seat")
 	cfgVals := map[string]string{}
 	flag.Var(cfgFlag(cfgVals), "config", "KEY=VALUE per-game config (repeatable; value may be @file)")
 	flag.Parse()
@@ -36,7 +37,20 @@ func Main(g Game) {
 	}
 	meta := g.Meta()
 	cfg := RoomConfig{Mode: ModeSolo, Capacity: meta.MaxPlayers, MinPlayers: meta.MinPlayers, Seed: s, SeedSet: true}
-	dev := Player{AccountID: "dev", Handle: *handle, Kind: KindMember, Conn: "local"}
+	if *seats < 1 {
+		*seats = 1
+	}
+	if *seats > meta.MaxPlayers {
+		*seats = meta.MaxPlayers
+	}
+	players := make([]Player, *seats)
+	for i := range players {
+		h := fmt.Sprintf("seat%d", i+1)
+		if i == 0 {
+			h = *handle
+		}
+		players[i] = Player{AccountID: fmt.Sprintf("seat-%d", i+1), Handle: h, Kind: KindMember, Conn: fmt.Sprintf("local-%d", i+1)}
+	}
 
 	r := &nativeRoom{
 		cfg:     cfg,
@@ -61,11 +75,16 @@ func Main(g Game) {
 	fmt.Print("\x1b[?1049h\x1b[?25l\x1b[2J")
 
 	h.OnStart(r)
-	r.members = []Player{dev}
-	h.OnJoin(r, dev)
+	for i, p := range players {
+		r.members = players[:i+1]
+		h.OnJoin(r, p)
+	}
+	r.members = players
 
 	keys := make(chan Input, 16)
 	done := make(chan struct{})
+	r.seatSwitch = make(chan struct{}, 4)
+	seatSwitches = r.seatSwitch
 	go readKeys(keys, done)
 
 	tick := time.NewTicker(*heartbeat)
@@ -76,16 +95,14 @@ func Main(g Game) {
 			h.OnWake(r)
 		case in, ok := <-keys:
 			if !ok {
-				r.members = nil
-				h.OnLeave(r, dev)
-				h.OnClose(r)
+				leaveAll(h, r, players)
 				return
 			}
-			h.OnInput(r, dev, in)
+			h.OnInput(r, players[r.active], in)
+		case <-r.seatSwitch:
+			r.active = (r.active + 1) % len(players)
 		case <-done:
-			r.members = nil
-			h.OnLeave(r, dev)
-			h.OnClose(r)
+			leaveAll(h, r, players)
 			return
 		}
 	}
@@ -111,6 +128,15 @@ func (c cfgFlag) Set(v string) error {
 	return nil
 }
 
+// leaveAll delivers leaves for every seat (last leave first-joined) and closes.
+func leaveAll(h Handler, r *nativeRoom, players []Player) {
+	for i := len(players) - 1; i >= 0; i-- {
+		r.members = players[:i]
+		h.OnLeave(r, players[i])
+	}
+	h.OnClose(r)
+}
+
 // readKeys parses raw stdin bytes into Inputs; closes done on Esc/Ctrl-C.
 func readKeys(out chan<- Input, done chan<- struct{}) {
 	buf := make([]byte, 64)
@@ -127,6 +153,8 @@ func readKeys(out chan<- Input, done chan<- struct{}) {
 			case b == 0x03: // Ctrl-C
 				close(done)
 				return
+			case b == 0x14: // Ctrl-T: next seat
+				seatSwitches <- struct{}{}
 			case b == 0x1b:
 				if i+2 < n && buf[i+1] == '[' {
 					switch buf[i+2] {
@@ -158,14 +186,19 @@ func readKeys(out chan<- Input, done chan<- struct{}) {
 	}
 }
 
+// seatSwitches carries Ctrl-T presses from the key reader to the run loop.
+var seatSwitches chan<- struct{}
+
 // nativeRoom implements Room directly against the terminal + in-memory state.
 type nativeRoom struct {
-	cfg     RoomConfig
-	members []Player
-	rng     *rand.Rand
-	kv      map[string][]byte // single dev player: flat key space
-	config  map[string]string
-	ended   bool
+	cfg        RoomConfig
+	members    []Player
+	active     int // hot-seat: which member the keyboard controls / renders
+	seatSwitch chan struct{}
+	rng        *rand.Rand
+	kv         map[string][]byte // keyed by account + key
+	config     map[string]string
+	ended      bool
 }
 
 func (r *nativeRoom) Members() []Player  { return r.members }
@@ -185,15 +218,19 @@ func (r *nativeRoom) Has(p Player) bool {
 }
 
 func (r *nativeRoom) Send(p Player, f *Frame) {
-	if f == nil || len(r.members) == 0 || p != r.members[0] {
-		return
+	if f == nil || r.active >= len(r.members) || p != r.members[r.active] {
+		return // render only the active seat's view
 	}
-	os.Stdout.WriteString("\x1b[H" + frameToANSI(f))
+	out := "\x1b[H" + frameToANSI(f)
+	if len(r.members) > 1 {
+		out += fmt.Sprintf("\r\n\x1b[2m seat %d/%d — Ctrl-T switches \x1b[0m", r.active+1, len(r.members))
+	}
+	os.Stdout.WriteString(out)
 }
 
 func (r *nativeRoom) Identical(f *Frame) {
-	if len(r.members) > 0 {
-		r.Send(r.members[0], f)
+	if r.active < len(r.members) {
+		r.Send(r.members[r.active], f)
 	}
 }
 

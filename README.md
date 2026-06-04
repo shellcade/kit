@@ -43,6 +43,12 @@ Rules of the road:
 
     devkit check game.wasm     # ABI handshake, meta, scripted room
     devkit play  game.wasm     # play it in this terminal (Esc to leave)
-    # flags: --seed N --heartbeat 50ms --config key=value --players N
+    # flags: --seed N --heartbeat 50ms --config key=value --seats N
+
+**Multiplayer testing is hot-seat — no SSH, no network.** Pass `--seats N`
+(or `-seats N` to `go run .`) to join N players to the one room; your
+keyboard drives the active seat and **Ctrl-T** switches seats, so you can play
+both sides of a duel from one terminal. The wasm runner renders each seat's own
+per-player frame, so seat-switching also verifies per-viewer composition.
 
 From the shellcade repo: `make play-pokies` builds the example and plays it.
