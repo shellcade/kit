@@ -2,7 +2,11 @@
 
 package gamekit
 
-import "math/rand"
+import (
+	"math/rand"
+
+	"github.com/shellcade/gamekit/wire"
+)
 
 // Run registers the game with the export trampolines. Call it from an init()
 // (or main()) in the plugin's main package; the eight //go:export functions in
@@ -36,7 +40,7 @@ func ExportMeta() int32 {
 }
 
 // decodeCall decodes the input payload into a Room for this callback.
-func decodeCall() (*room, *rbuf) {
+func decodeCall() (*room, *wire.Rd) {
 	ctx, r := decodeCtx(inputBytes())
 	if rng == nil {
 		rng = rand.New(rand.NewSource(ctx.cfg.Seed))
@@ -44,9 +48,9 @@ func decodeCall() (*room, *rbuf) {
 	return &room{ctx: ctx, rng: rng}, r
 }
 
-func decodePlayer(rm *room, r *rbuf) (Player, bool) {
-	idx := int(r.u32())
-	if r.bad || idx < 0 || idx >= len(rm.ctx.members) {
+func decodePlayer(rm *room, r *wire.Rd) (Player, bool) {
+	idx := int(r.U32())
+	if r.Bad || idx < 0 || idx >= len(rm.ctx.members) {
 		return Player{}, false
 	}
 	return rm.ctx.members[idx], true
@@ -86,9 +90,9 @@ func ExportInput() int32 {
 		return 0
 	}
 	var in Input
-	in.Kind = InputKind(r.u8())
-	in.Rune = rune(r.u32())
-	in.Key = Key(r.u8())
+	in.Kind = InputKind(r.U8())
+	in.Rune = rune(r.U32())
+	in.Key = Key(r.U8())
 	handler.OnInput(rm, p, in)
 	return 0
 }
