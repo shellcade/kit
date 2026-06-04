@@ -19,10 +19,17 @@ Rules of the road:
 - **Per-player durable state** via `r.Services().Accounts.For(p).Store()` —
   the kv keys are namespaced to your game and the player by the host.
 
-## Build (dev profile — ~4 seconds)
+## The dev loop (three gears)
 
-    tinygo build -opt=1 -no-debug -gc=leaking -o game.wasm \
-        -target wasip1 -buildmode=c-shared .
+1. **Inner loop — no wasm at all (~0.1s):** `go run .` in your game directory
+   plays the game natively in your terminal via `gamekit.Main` — normal Go
+   builds, delve, prints, real stack traces.
+   Flags: `-seed N -heartbeat 50ms -config k=v -handle name`.
+2. **Artifact check (~4s):** build the real wasm and verify it:
+
+       tinygo build -opt=1 -no-debug -gc=leaking -o game.wasm \
+           -target wasip1 -buildmode=c-shared .
+3. **Release:** `-opt=2` in CI (minutes — never in your inner loop).
 
 - `-opt=1` skips binaryen/wasm-opt (the slow part). Release builds can use
   `-opt=2`; expect minutes, run it in CI not your inner loop.

@@ -110,3 +110,8 @@ func ExportClose() int32 {
 	}
 	return 0
 }
+
+// Main is the dual-target entrypoint: under wasm it registers the game (the
+// //go:export trampolines do the rest); built natively it runs the instant
+// local dev loop (see devrun.go) — same game source, no wasm in the inner loop.
+func Main(g Game) { Run(g) }
