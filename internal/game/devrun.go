@@ -1,6 +1,6 @@
 //go:build !wasip1 && !tinygo.wasm
 
-package gamekit
+package game
 
 import (
 	"context"

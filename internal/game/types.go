@@ -5,7 +5,7 @@
 //
 // A game implements Game + Handler and calls Run(game) from main(), plus the
 // eight //go:export trampolines (see examples/pokies/main.go).
-package gamekit
+package game
 
 // ABIVersion is the ABI major version this SDK targets.
 const ABIVersion uint32 = 1

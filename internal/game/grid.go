@@ -1,4 +1,4 @@
-package gamekit
+package game
 
 // The fixed 80x24 cell grid, mirroring the platform's canvas package: writes
 // outside the grid are clamped (never errored), and the packed frame encoding

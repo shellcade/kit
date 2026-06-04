@@ -1,8 +1,27 @@
-# gamekit — shellcade guest SDK (PROTOTYPE)
+# gamekit — the shellcade game developer kit
 
-The authoring SDK for shellcade wasm games (ABI v1). Implemented purely from
-the ABI contract; imports no shellcade private code. See
-`openspec/changes/add-wasm-game-abi/` and `add-game-devkit/` for the design.
+Write multiplayer terminal games for [shellcade.com](https://shellcade.com) —
+develop and test locally with zero setup, compile to WebAssembly, submit the
+artifact. This module is the complete contract: the `wire` package and
+[ABI.md](ABI.md) define the ABI, and no shellcade-private code is needed
+(or referenced) anywhere here.
+
+**Start with [GUIDE.md](GUIDE.md)** — or go straight to playing:
+
+```sh
+go run github.com/shellcade/gamekit/cmd/gamekit@latest new mygame
+cd mygame && go mod tidy && go run .
+```
+
+## Layout
+
+| Path | What |
+|---|---|
+| `gamekit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
+| `wire/` | the ABI as code: version, names, packed payload codecs |
+| `cmd/gamekit` | author CLI: `gamekit new <name>` scaffolds a playable game |
+| `examples/pokies` | the reference game (uses every SDK feature) |
+| `ABI.md` / `GUIDE.md` | the normative contract / the authoring guide |
 
 ## Write a game
 

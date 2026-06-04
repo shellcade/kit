@@ -1,4 +1,4 @@
-package gamekit
+package game
 
 import (
 	"context"
