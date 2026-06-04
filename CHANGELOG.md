@@ -1,5 +1,12 @@
 # kit
 
+## 0.3.1
+
+- `kit new` scaffolds pin the CLI's own module version (via build info), fixing
+  scaffolds that pointed at a pre-rename version with the old module path.
+- Deleted the pre-rename tags (v0.1.0, v0.2.0) whose go.mod declared
+  `github.com/shellcade/gamekit`.
+
 ## 0.3.0
 
 - Repo renamed `gamekit` → **`kit`** and flipped public; module path is now

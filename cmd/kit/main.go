@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
 
@@ -33,10 +34,12 @@ func scaffold(name string) error {
 	if _, err := os.Stat(name); err == nil {
 		return fmt.Errorf("%s already exists", name)
 	}
+	gomod := strings.ReplaceAll(tmplGoMod, "NAME", name)
+	gomod = strings.ReplaceAll(gomod, "KITVERSION", kitVersion())
 	files := map[string]string{
 		"main.go":    strings.ReplaceAll(tmplMain, "NAME", name),
 		"exports.go": tmplExports,
-		"go.mod":     strings.ReplaceAll(tmplGoMod, "NAME", name),
+		"go.mod":     gomod,
 		"README.md":  strings.ReplaceAll(tmplReadme, "NAME", name),
 	}
 	if err := os.MkdirAll(name, 0o755); err != nil {
@@ -167,11 +170,26 @@ func expWake() int32 { return kit.ExportWake() }
 func expClose() int32 { return kit.ExportClose() }
 `
 
+// fallbackKitVersion is used when the CLI runs from a source checkout
+// ((devel) build info); released binaries stamp their own version.
+const fallbackKitVersion = "v0.3.1"
+
+// kitVersion is the kit module version this CLI was built from — the scaffold
+// pins the same version, so the template can never drift from the release.
+func kitVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return fallbackKitVersion
+}
+
 const tmplGoMod = `module NAME
 
 go 1.25
 
-require github.com/shellcade/kit v0.2.0
+require github.com/shellcade/kit KITVERSION
 `
 
 const tmplReadme = `# NAME — a shellcade game
