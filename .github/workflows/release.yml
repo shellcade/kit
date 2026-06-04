@@ -26,4 +26,7 @@ jobs:
           version: npx changeset version
           publish: npm run release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT (contents:write + pull-requests:write on this repo) lets the
+          # action create the Version Packages PR even while the org forbids
+          # Actions-created PRs; falls back to the Actions token otherwise.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
