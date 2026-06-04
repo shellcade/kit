@@ -130,10 +130,10 @@ follows — so you can play every side of your own game.
 |---|---|---|
 | iterate | `go run .` (~0.1s) | gameplay, rendering, logic |
 | artifact | `tinygo build -opt=1 -no-debug -gc=leaking -target wasip1 -buildmode=c-shared .` (~4s) | the real wasm builds |
-| verify | `devkit check game.wasm` | ABI conformance, budgets, determinism — the same gate the arcade runs |
-| play it | `devkit play game.wasm --seats 2` | the artifact, on the production engine |
+| verify | `shellcade-kit check game.wasm` | ABI conformance, budgets, determinism — the same gate the arcade runs |
+| play it | `shellcade-kit play game.wasm --seats 2` | the artifact, on the production engine |
 
-`devkit check` passing locally **is** the arcade's acceptance bar — same
+`shellcade-kit check` passing locally **is** the arcade's acceptance bar — same
 code, same verdict.
 
 ## What your game can't do (on purpose)
@@ -141,7 +141,7 @@ code, same verdict.
 No filesystem, no network, no system clock, no threads: the sandbox gives
 your game exactly the eleven host functions in ABI.md §3 and nothing else.
 Resource budgets (memory cap, per-callback deadline) are enforced and
-reported by `devkit check` — stay comfortably inside them and an arcade full
+reported by `shellcade-kit check` — stay comfortably inside them and an arcade full
 of other games stays healthy around yours.
 
 ## Study a complete game

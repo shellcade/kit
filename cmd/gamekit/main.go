@@ -187,8 +187,8 @@ const tmplReadme = `# NAME — a shellcade game
     tinygo build -opt=1 -no-debug -gc=leaking \
         -o NAME.wasm -target wasip1 -buildmode=c-shared .
 
-Then verify with the shellcade devkit: devkit check NAME.wasm — and play the
-real artifact with devkit play NAME.wasm.
+Then verify with the shellcade developer kit: shellcade-kit check NAME.wasm — and play the
+real artifact with shellcade-kit play NAME.wasm.
 
 ## Learn more
 

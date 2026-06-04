@@ -60,7 +60,7 @@ Rules of the road:
 
 ## Test and play
 
-    devkit check game.wasm     # ABI handshake, meta, scripted room
+    shellcade-kit check game.wasm     # ABI handshake, meta, scripted room
     devkit play  game.wasm     # play it in this terminal (Esc to leave)
     # flags: --seed N --heartbeat 50ms --config key=value --seats N
 
