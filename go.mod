@@ -1,4 +1,4 @@
-module github.com/shellcade/gamekit
+module github.com/shellcade/kit
 
 go 1.25.0
 

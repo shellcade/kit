@@ -7,16 +7,16 @@
 // Build: tinygo build -o pokies.wasm -target wasip1 -buildmode=c-shared .
 package main
 
-import gamekit "github.com/shellcade/gamekit"
+import kit "github.com/shellcade/kit"
 
-func main() { gamekit.Main(Game{}) }
+func main() { kit.Main(Game{}) }
 
 // Game is the pokies registry entry.
 type Game struct{}
 
 // Meta returns the static game metadata (mirrors the native pokies meta).
-func (Game) Meta() gamekit.GameMeta {
-	return gamekit.GameMeta{
+func (Game) Meta() kit.GameMeta {
+	return kit.GameMeta{
 		Slug:             "pokies",
 		Name:             "Pokies",
 		ShortDescription: "Pull the lever on your own slot machine and chase your high score.",
@@ -28,16 +28,16 @@ func (Game) Meta() gamekit.GameMeta {
 		SoloModeLabel:     "Solo spin",
 		PrivateInviteLine: "Friends join your floor when they enter the code.",
 
-		Leaderboard: &gamekit.LeaderboardSpec{
+		Leaderboard: &kit.LeaderboardSpec{
 			MetricLabel: "Credits",
-			Direction:   gamekit.HigherBetter,
-			Aggregation: gamekit.BestResult,
-			Format:      gamekit.Integer,
+			Direction:   kit.HigherBetter,
+			Aggregation: kit.BestResult,
+			Format:      kit.Integer,
 		},
 	}
 }
 
 // NewRoom returns the per-room behavior.
-func (Game) NewRoom(cfg gamekit.RoomConfig, svc gamekit.Services) gamekit.Handler {
+func (Game) NewRoom(cfg kit.RoomConfig, svc kit.Services) kit.Handler {
 	return newRoom(cfg, svc)
 }

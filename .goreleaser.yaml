@@ -2,12 +2,12 @@
 # the changesets release flow). Changelogs are owned by changesets
 # (CHANGELOG.md), so GoReleaser's own changelog is disabled.
 version: 2
-project_name: gamekit
+project_name: kit
 
 builds:
-  - id: gamekit
-    main: ./cmd/gamekit
-    binary: gamekit
+  - id: kit
+    main: ./cmd/kit
+    binary: kit
     env: [CGO_ENABLED=0]
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
@@ -30,4 +30,4 @@ release:
   draft: false
   footer: |
     ---
-    Author docs: [GUIDE.md](https://github.com/shellcade/gamekit/blob/main/GUIDE.md) · ABI contract: [ABI.md](https://github.com/shellcade/gamekit/blob/main/ABI.md)
+    Author docs: [GUIDE.md](https://github.com/shellcade/kit/blob/main/GUIDE.md) · ABI contract: [ABI.md](https://github.com/shellcade/kit/blob/main/ABI.md)

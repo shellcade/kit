@@ -1,4 +1,4 @@
-// Command gamekit is the author CLI for the shellcade game developer kit.
+// Command kit is the author CLI for the shellcade game developer kit.
 //
 //	gamekit new <name>    scaffold a complete, playable game in ./<name>/
 //
@@ -15,12 +15,12 @@ import (
 
 func main() {
 	if len(os.Args) < 3 || os.Args[1] != "new" {
-		fmt.Fprintln(os.Stderr, "usage: gamekit new <name>")
+		fmt.Fprintln(os.Stderr, "usage: kit new <name>")
 		os.Exit(2)
 	}
 	name := strings.ToLower(os.Args[2])
 	if err := scaffold(name); err != nil {
-		fmt.Fprintln(os.Stderr, "gamekit:", err)
+		fmt.Fprintln(os.Stderr, "kit:", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Scaffolded %s/ — try it now:\n\n  cd %s && go mod tidy && go run .\n\nSee %s/README.md for the wasm build and next steps.\n", name, name, name)
@@ -57,16 +57,16 @@ import (
 	"fmt"
 	"time"
 
-	gamekit "github.com/shellcade/gamekit"
+	kit "github.com/shellcade/kit"
 )
 
-func main() { gamekit.Main(Game{}) }
+func main() { kit.Main(Game{}) }
 
 // Game is the registry entry: metadata + a per-room behavior factory.
 type Game struct{}
 
-func (Game) Meta() gamekit.GameMeta {
-	return gamekit.GameMeta{
+func (Game) Meta() kit.GameMeta {
+	return kit.GameMeta{
 		Slug:             "NAME",
 		Name:             "NAME",
 		ShortDescription: "Describe your game in one line.",
@@ -75,27 +75,27 @@ func (Game) Meta() gamekit.GameMeta {
 	}
 }
 
-func (Game) NewRoom(cfg gamekit.RoomConfig, svc gamekit.Services) gamekit.Handler {
+func (Game) NewRoom(cfg kit.RoomConfig, svc kit.Services) kit.Handler {
 	return &room{}
 }
 
 // room is one live room. ALL state lives here (and only here) — the host can
 // snapshot and restore it, so key anything durable by Player.AccountID.
 type room struct {
-	gamekit.Base
+	kit.Base
 	presses  int
 	deadline time.Time // a wake-driven one-shot: see OnWake
 }
 
-func (rm *room) OnStart(r gamekit.Room) {
-	r.SetInputContext(gamekit.CtxNav)
+func (rm *room) OnStart(r kit.Room) {
+	r.SetInputContext(kit.CtxNav)
 }
 
-func (rm *room) OnJoin(r gamekit.Room, p gamekit.Player) { rm.render(r) }
+func (rm *room) OnJoin(r kit.Room, p kit.Player) { rm.render(r) }
 
-func (rm *room) OnInput(r gamekit.Room, p gamekit.Player, in gamekit.Input) {
-	switch gamekit.Resolve(in, gamekit.CtxNav) {
-	case gamekit.ActConfirm:
+func (rm *room) OnInput(r kit.Room, p kit.Player, in kit.Input) {
+	switch kit.Resolve(in, kit.CtxNav) {
+	case kit.ActConfirm:
 		rm.presses++
 		// One-shot timer, the wake way: store a deadline, check it in OnWake.
 		rm.deadline = r.Now().Add(2 * time.Second)
@@ -105,7 +105,7 @@ func (rm *room) OnInput(r gamekit.Room, p gamekit.Player, in gamekit.Input) {
 
 // OnWake is the host heartbeat — the ONLY time your code runs without input.
 // Drive every animation, countdown, and timeout from CallContext time here.
-func (rm *room) OnWake(r gamekit.Room) {
+func (rm *room) OnWake(r kit.Room) {
 	if !rm.deadline.IsZero() && r.Now().After(rm.deadline) {
 		rm.deadline = time.Time{}
 		rm.presses = 0 // the timeout fired: reset
@@ -113,18 +113,18 @@ func (rm *room) OnWake(r gamekit.Room) {
 	rm.render(r)
 }
 
-func (rm *room) render(r gamekit.Room) {
-	f := gamekit.NewFrame() // frames are POINTERS, always (see ABI.md §6)
-	title := gamekit.Style{FG: gamekit.Cyan, Attr: gamekit.AttrBold}
-	dim := gamekit.Style{FG: gamekit.DimGray}
+func (rm *room) render(r kit.Room) {
+	f := kit.NewFrame() // frames are POINTERS, always (see ABI.md §6)
+	title := kit.Style{FG: kit.Cyan, Attr: kit.AttrBold}
+	dim := kit.Style{FG: kit.DimGray}
 
 	f.Text(2, 4, "*** NAME ***", title)
-	f.Text(10, 4, fmt.Sprintf("SPACE pressed %d times", rm.presses), gamekit.Style{FG: gamekit.White})
+	f.Text(10, 4, fmt.Sprintf("SPACE pressed %d times", rm.presses), kit.Style{FG: kit.White})
 	if !rm.deadline.IsZero() {
 		left := rm.deadline.Sub(r.Now()).Round(100 * time.Millisecond)
-		f.Text(12, 4, fmt.Sprintf("resetting in %s...", left), gamekit.Style{FG: gamekit.Yellow})
+		f.Text(12, 4, fmt.Sprintf("resetting in %s...", left), kit.Style{FG: kit.Yellow})
 	}
-	f.Text(gamekit.Rows-1, 2, "SPACE press   Esc leave", dim)
+	f.Text(kit.Rows-1, 2, "SPACE press   Esc leave", dim)
 
 	for _, p := range r.Members() {
 		r.Send(p, f)
@@ -136,42 +136,42 @@ const tmplExports = `//go:build wasip1 || tinygo.wasm
 
 package main
 
-import gamekit "github.com/shellcade/gamekit"
+import kit "github.com/shellcade/kit"
 
-func init() { gamekit.Run(Game{}) }
+func init() { kit.Run(Game{}) }
 
 // The eight shellcade ABI exports, trampolined to the SDK.
 
 //go:export shellcade_abi
-func expABI() int32 { return gamekit.ExportABI() }
+func expABI() int32 { return kit.ExportABI() }
 
 //go:export meta
-func expMeta() int32 { return gamekit.ExportMeta() }
+func expMeta() int32 { return kit.ExportMeta() }
 
 //go:export start
-func expStart() int32 { return gamekit.ExportStart() }
+func expStart() int32 { return kit.ExportStart() }
 
 //go:export join
-func expJoin() int32 { return gamekit.ExportJoin() }
+func expJoin() int32 { return kit.ExportJoin() }
 
 //go:export leave
-func expLeave() int32 { return gamekit.ExportLeave() }
+func expLeave() int32 { return kit.ExportLeave() }
 
 //go:export input
-func expInput() int32 { return gamekit.ExportInput() }
+func expInput() int32 { return kit.ExportInput() }
 
 //go:export wake
-func expWake() int32 { return gamekit.ExportWake() }
+func expWake() int32 { return kit.ExportWake() }
 
 //go:export close
-func expClose() int32 { return gamekit.ExportClose() }
+func expClose() int32 { return kit.ExportClose() }
 `
 
 const tmplGoMod = `module NAME
 
 go 1.25
 
-require github.com/shellcade/gamekit v0.2.0
+require github.com/shellcade/kit v0.2.0
 `
 
 const tmplReadme = `# NAME — a shellcade game
@@ -192,7 +192,7 @@ real artifact with shellcade-kit play NAME.wasm.
 
 ## Learn more
 
-- GUIDE.md in github.com/shellcade/gamekit — the authoring guide
+- GUIDE.md in github.com/shellcade/kit — the authoring guide
 - ABI.md — the contract your game targets
 - examples/pokies — a complete game using every SDK feature
 `

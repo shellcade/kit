@@ -1,8 +1,8 @@
 //go:build !wasip1 && !tinygo.wasm
 
-package gamekit
+package kit
 
-import "github.com/shellcade/gamekit/internal/game"
+import "github.com/shellcade/kit/internal/game"
 
 // Main, built natively, runs the instant inner-loop dev runner: `go run .`
 // plays the game in this terminal with normal Go tooling and zero wasm.

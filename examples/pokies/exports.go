@@ -2,32 +2,32 @@
 
 package main
 
-import gamekit "github.com/shellcade/gamekit"
+import kit "github.com/shellcade/kit"
 
-func init() { gamekit.Run(Game{}) }
+func init() { kit.Run(Game{}) }
 
 // The eight ABI exports, trampolined to the gamekit SDK.
 
 //go:export shellcade_abi
-func expABI() int32 { return gamekit.ExportABI() }
+func expABI() int32 { return kit.ExportABI() }
 
 //go:export meta
-func expMeta() int32 { return gamekit.ExportMeta() }
+func expMeta() int32 { return kit.ExportMeta() }
 
 //go:export start
-func expStart() int32 { return gamekit.ExportStart() }
+func expStart() int32 { return kit.ExportStart() }
 
 //go:export join
-func expJoin() int32 { return gamekit.ExportJoin() }
+func expJoin() int32 { return kit.ExportJoin() }
 
 //go:export leave
-func expLeave() int32 { return gamekit.ExportLeave() }
+func expLeave() int32 { return kit.ExportLeave() }
 
 //go:export input
-func expInput() int32 { return gamekit.ExportInput() }
+func expInput() int32 { return kit.ExportInput() }
 
 //go:export wake
-func expWake() int32 { return gamekit.ExportWake() }
+func expWake() int32 { return kit.ExportWake() }
 
 //go:export close
-func expClose() int32 { return gamekit.ExportClose() }
+func expClose() int32 { return kit.ExportClose() }

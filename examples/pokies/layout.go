@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	gamekit "github.com/shellcade/gamekit"
+	kit "github.com/shellcade/kit"
 )
 
 // Rendering: a near-verbatim port of the native pokies layout to the gamekit
@@ -19,40 +19,40 @@ const (
 )
 
 var (
-	stTitle   = gamekit.Style{FG: gamekit.White, Attr: gamekit.AttrBold}
-	stDim     = gamekit.Style{FG: gamekit.DimGray}
-	stTicker  = gamekit.Style{FG: gamekit.Yellow, Attr: gamekit.AttrBold}
-	stBordOwn = gamekit.Style{FG: gamekit.Cyan, Attr: gamekit.AttrBold}
-	stBordDim = gamekit.Style{FG: gamekit.DimGray}
-	stNameOwn = gamekit.Style{FG: gamekit.Yellow, Attr: gamekit.AttrBold}
-	stName    = gamekit.Style{FG: gamekit.White}
-	stPayline = gamekit.Style{FG: gamekit.Yellow, Attr: gamekit.AttrBold}
-	stReelDim = gamekit.Style{FG: gamekit.DimGray}
-	stMarker  = gamekit.Style{FG: gamekit.Cyan, Attr: gamekit.AttrBold}
-	stLabel   = gamekit.Style{FG: gamekit.DimGray}
-	stWin     = gamekit.Style{FG: gamekit.Green, Attr: gamekit.AttrBold}
-	stRebuy   = gamekit.Style{FG: gamekit.Red, Attr: gamekit.AttrBold}
-	stReady   = gamekit.Style{FG: gamekit.DimGray}
-	stLever   = gamekit.Style{FG: gamekit.Red, Attr: gamekit.AttrBold}
+	stTitle   = kit.Style{FG: kit.White, Attr: kit.AttrBold}
+	stDim     = kit.Style{FG: kit.DimGray}
+	stTicker  = kit.Style{FG: kit.Yellow, Attr: kit.AttrBold}
+	stBordOwn = kit.Style{FG: kit.Cyan, Attr: kit.AttrBold}
+	stBordDim = kit.Style{FG: kit.DimGray}
+	stNameOwn = kit.Style{FG: kit.Yellow, Attr: kit.AttrBold}
+	stName    = kit.Style{FG: kit.White}
+	stPayline = kit.Style{FG: kit.Yellow, Attr: kit.AttrBold}
+	stReelDim = kit.Style{FG: kit.DimGray}
+	stMarker  = kit.Style{FG: kit.Cyan, Attr: kit.AttrBold}
+	stLabel   = kit.Style{FG: kit.DimGray}
+	stWin     = kit.Style{FG: kit.Green, Attr: kit.AttrBold}
+	stRebuy   = kit.Style{FG: kit.Red, Attr: kit.AttrBold}
+	stReady   = kit.Style{FG: kit.DimGray}
+	stLever   = kit.Style{FG: kit.Red, Attr: kit.AttrBold}
 )
 
 // render composes and sends a per-viewer frame to every member.
-func (rm *room) render(r gamekit.Room) {
+func (rm *room) render(r kit.Room) {
 	rm.lastNow = r.Now()
 	for _, v := range r.Members() {
 		r.Send(v, rm.compose(v))
 	}
 }
 
-func (rm *room) compose(v gamekit.Player) *gamekit.Frame {
-	f := gamekit.NewFrame()
+func (rm *room) compose(v kit.Player) *kit.Frame {
+	f := kit.NewFrame()
 
 	f.Text(0, 2, "*** POKIES ***", stTitle)
-	f.TextRight(0, gamekit.Cols-2, "pull the lever - chase your high score", stDim)
+	f.TextRight(0, kit.Cols-2, "pull the lever - chase your high score", stDim)
 
 	if rm.tickerActive(rm.lastNow) {
 		msg := "* " + rm.ticker.text + " *"
-		f.Text(1, (gamekit.Cols-len(msg))/2, msg, stTicker)
+		f.Text(1, (kit.Cols-len(msg))/2, msg, stTicker)
 	}
 
 	n := len(rm.order)
@@ -61,21 +61,21 @@ func (rm *room) compose(v gamekit.Player) *gamekit.Frame {
 	}
 	if n > 0 {
 		group := n*cardW + (n-1)*gutter
-		start := (gamekit.Cols - group) / 2
+		start := (kit.Cols - group) / 2
 		for i := 0; i < n; i++ {
 			id := rm.order[i]
 			rm.drawCard(f, start+i*(cardW+gutter), cardTop, id, id == v.AccountID)
 		}
 	}
 
-	f.Text(gamekit.Rows-1, 2, "Up/Down bet   SPACE spin   Esc leave", stDim)
+	f.Text(kit.Rows-1, 2, "Up/Down bet   SPACE spin   Esc leave", stDim)
 	if m := rm.machines[v.AccountID]; m != nil {
-		f.TextRight(gamekit.Rows-1, gamekit.Cols-2, fmt.Sprintf("BAL %d   HI %d", m.balance, m.highScore), stDim)
+		f.TextRight(kit.Rows-1, kit.Cols-2, fmt.Sprintf("BAL %d   HI %d", m.balance, m.highScore), stDim)
 	}
 	return f
 }
 
-func (rm *room) drawCard(f *gamekit.Frame, col, top int, id string, own bool) {
+func (rm *room) drawCard(f *kit.Frame, col, top int, id string, own bool) {
 	m := rm.machines[id]
 	if m == nil {
 		return
@@ -139,7 +139,7 @@ func (rm *room) drawCard(f *gamekit.Frame, col, top int, id string, own bool) {
 	f.Text(top+10, col+5, "[__]", bord)
 }
 
-func (rm *room) border(f *gamekit.Frame, row, col int, lc, rc rune, st gamekit.Style) {
+func (rm *room) border(f *kit.Frame, row, col int, lc, rc rune, st kit.Style) {
 	f.SetRune(row, col, lc, st)
 	f.SetRune(row, col+cardW-1, rc, st)
 	for c := col + 1; c < col+cardW-1; c++ {
@@ -147,12 +147,12 @@ func (rm *room) border(f *gamekit.Frame, row, col int, lc, rc rune, st gamekit.S
 	}
 }
 
-func (rm *room) body(f *gamekit.Frame, row, col int, label string, val int) {
+func (rm *room) body(f *kit.Frame, row, col int, label string, val int) {
 	f.Text(row, col+2, label, stLabel)
 	f.TextRight(row, col+cardW-2, fmt.Sprintf("%d", val), stTitle)
 }
 
-func (rm *room) status(f *gamekit.Frame, row, col int, m *machine) {
+func (rm *room) status(f *kit.Frame, row, col int, m *machine) {
 	text, st := "ready", stReady
 	switch {
 	case m.flash == "RE-BUY":
@@ -168,7 +168,7 @@ func (rm *room) status(f *gamekit.Frame, row, col int, m *machine) {
 	f.Text(row, col+(cardW-len(text))/2, text, st)
 }
 
-func (rm *room) lever(f *gamekit.Frame, col, top int, m *machine) {
+func (rm *room) lever(f *kit.Frame, col, top int, m *machine) {
 	lx := col + 11
 	knob := top + 1
 	if m.spin != nil {

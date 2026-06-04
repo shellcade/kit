@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	gamekit "github.com/shellcade/gamekit"
+	kit "github.com/shellcade/kit"
 )
 
 const (
@@ -62,32 +62,32 @@ type ticker struct {
 }
 
 type room struct {
-	gamekit.Base
-	cfg gamekit.RoomConfig
-	svc gamekit.Services
+	kit.Base
+	cfg kit.RoomConfig
+	svc kit.Services
 
 	machines map[string]*machine // keyed by account id (hibernation-safe)
 	order    []string            // join order of account ids
-	names    map[string]gamekit.Player
+	names    map[string]kit.Player
 	ticker   ticker
 	variant  *variant
 	nextCfg  time.Time
 	lastNow  time.Time
 }
 
-func newRoom(cfg gamekit.RoomConfig, svc gamekit.Services) *room {
-	return &room{cfg: cfg, svc: svc, machines: map[string]*machine{}, names: map[string]gamekit.Player{}, variant: defaultVariant()}
+func newRoom(cfg kit.RoomConfig, svc kit.Services) *room {
+	return &room{cfg: cfg, svc: svc, machines: map[string]*machine{}, names: map[string]kit.Player{}, variant: defaultVariant()}
 }
 
-func (rm *room) OnStart(r gamekit.Room) {
-	r.SetInputContext(gamekit.CtxNav)
+func (rm *room) OnStart(r kit.Room) {
+	r.SetInputContext(kit.CtxNav)
 	rm.loadVariant(r)
 	rm.nextCfg = r.Now().Add(configRefresh)
 }
 
 // loadVariant reads the odds variant from per-game config. A missing key or a
 // bad document keeps the last good variant, mirroring the native game.
-func (rm *room) loadVariant(r gamekit.Room) {
+func (rm *room) loadVariant(r kit.Room) {
 	blob, ok, err := r.Services().Config.Get(context.Background(), "odds-variant")
 	if err != nil || !ok {
 		rm.variant = defaultVariant()
@@ -104,7 +104,7 @@ func (rm *room) loadVariant(r gamekit.Room) {
 // wallet: the casino pattern over kv — balance (sum) and peak (max), the same
 // keys and merge rules as the native casino package.
 
-func kvInt(store gamekit.KVStore, key string) (int, bool) {
+func kvInt(store kit.KVStore, key string) (int, bool) {
 	v, ok, err := store.Get(context.Background(), key)
 	if err != nil || !ok {
 		return 0, false
@@ -116,7 +116,7 @@ func kvInt(store gamekit.KVStore, key string) (int, bool) {
 	return n, true
 }
 
-func (rm *room) seedWallet(r gamekit.Room, p gamekit.Player) (int, int) {
+func (rm *room) seedWallet(r kit.Room, p kit.Player) (int, int) {
 	acct := r.Services().Accounts.For(p)
 	if acct == nil {
 		return startBalance, startBalance
@@ -133,17 +133,17 @@ func (rm *room) seedWallet(r gamekit.Room, p gamekit.Player) (int, int) {
 	return bal, peak
 }
 
-func (rm *room) persistWallet(r gamekit.Room, p gamekit.Player, bal, peak int) {
+func (rm *room) persistWallet(r kit.Room, p kit.Player, bal, peak int) {
 	acct := r.Services().Accounts.For(p)
 	if acct == nil {
 		return
 	}
 	store := acct.Store()
-	_ = store.Set(context.Background(), "balance", []byte(strconv.Itoa(bal)), gamekit.MergeSum)
-	_ = store.Set(context.Background(), "peak", []byte(strconv.Itoa(peak)), gamekit.MergeMax)
+	_ = store.Set(context.Background(), "balance", []byte(strconv.Itoa(bal)), kit.MergeSum)
+	_ = store.Set(context.Background(), "peak", []byte(strconv.Itoa(peak)), kit.MergeMax)
 }
 
-func (rm *room) OnJoin(r gamekit.Room, p gamekit.Player) {
+func (rm *room) OnJoin(r kit.Room, p kit.Player) {
 	rm.names[p.AccountID] = p
 	if _, ok := rm.machines[p.AccountID]; ok {
 		rm.render(r)
@@ -155,7 +155,7 @@ func (rm *room) OnJoin(r gamekit.Room, p gamekit.Player) {
 	rm.render(r)
 }
 
-func (rm *room) OnLeave(r gamekit.Room, p gamekit.Player) {
+func (rm *room) OnLeave(r kit.Room, p kit.Player) {
 	m := rm.machines[p.AccountID]
 	if m == nil {
 		return
@@ -172,17 +172,17 @@ func (rm *room) OnLeave(r gamekit.Room, p gamekit.Player) {
 	rm.render(r)
 }
 
-func (rm *room) OnInput(r gamekit.Room, p gamekit.Player, in gamekit.Input) {
+func (rm *room) OnInput(r kit.Room, p kit.Player, in kit.Input) {
 	m := rm.machines[p.AccountID]
 	if m == nil {
 		return
 	}
-	switch gamekit.Resolve(in, gamekit.CtxNav) {
-	case gamekit.ActUp:
+	switch kit.Resolve(in, kit.CtxNav) {
+	case kit.ActUp:
 		rm.adjustBet(m, +1)
-	case gamekit.ActDown:
+	case kit.ActDown:
 		rm.adjustBet(m, -1)
-	case gamekit.ActConfirm:
+	case kit.ActConfirm:
 		rm.startSpin(r, p)
 	}
 	rm.render(r)
@@ -190,7 +190,7 @@ func (rm *room) OnInput(r gamekit.Room, p gamekit.Player, in gamekit.Input) {
 
 // OnWake advances every time-driven element against CallContext time, then
 // renders: reel landings, flash expiry, and the periodic config refresh.
-func (rm *room) OnWake(r gamekit.Room) {
+func (rm *room) OnWake(r kit.Room) {
 	now := r.Now()
 	if !rm.nextCfg.IsZero() && now.After(rm.nextCfg) {
 		rm.loadVariant(r)
@@ -217,7 +217,7 @@ func (rm *room) OnWake(r gamekit.Room) {
 	rm.render(r)
 }
 
-func (rm *room) OnClose(r gamekit.Room) {
+func (rm *room) OnClose(r kit.Room) {
 	for id, m := range rm.machines {
 		if p, ok := rm.names[id]; ok {
 			rm.persistWallet(r, p, m.balance, m.highScore)
@@ -256,7 +256,7 @@ func (rm *room) clampBet(m *machine) {
 
 // --- spinning ------------------------------------------------------------------
 
-func (rm *room) startSpin(r gamekit.Room, p gamekit.Player) {
+func (rm *room) startSpin(r kit.Room, p kit.Player) {
 	m := rm.machines[p.AccountID]
 	if m == nil || m.spin != nil {
 		return
@@ -280,7 +280,7 @@ func (rm *room) startSpin(r gamekit.Room, p gamekit.Player) {
 	m.spin = s
 }
 
-func (rm *room) landReel(r gamekit.Room, id string, i int) {
+func (rm *room) landReel(r kit.Room, id string, i int) {
 	m := rm.machines[id]
 	if m == nil || m.spin == nil {
 		return
@@ -296,7 +296,7 @@ func (rm *room) landReel(r gamekit.Room, id string, i int) {
 	}
 }
 
-func (rm *room) settleSpin(r gamekit.Room, id string) {
+func (rm *room) settleSpin(r kit.Room, id string) {
 	m := rm.machines[id]
 	if m == nil || m.spin == nil {
 		return

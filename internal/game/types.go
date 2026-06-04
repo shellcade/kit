@@ -1,4 +1,4 @@
-// Package gamekit is the shellcade guest SDK: the authoring surface for wasm
+// Package kit is the shellcade guest SDK: the authoring surface for wasm
 // games targeting shellcade ABI v1. It is implemented purely from the ABI
 // contract — it imports no shellcade private code — and mirrors the native
 // sdk package's value types so a native game ports mechanically.

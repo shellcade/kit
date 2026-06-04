@@ -1,4 +1,4 @@
-// Package gamekit is the shellcade game developer kit: the authoring surface
+// Package kit is the shellcade game developer kit: the authoring surface
 // for wasm games targeting the shellcade ABI (see ABI.md; the wire package is
 // the ABI's code form).
 //
@@ -8,9 +8,9 @@
 //
 // This package is a curated facade over internal/game; the implementation is
 // internal so the public surface stays deliberate and versionable.
-package gamekit
+package kit
 
-import "github.com/shellcade/gamekit/internal/game"
+import "github.com/shellcade/kit/internal/game"
 
 // ABIVersion is the ABI major version this SDK targets.
 const ABIVersion = game.ABIVersion

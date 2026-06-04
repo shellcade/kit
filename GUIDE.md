@@ -9,7 +9,7 @@ shellcade's source; this module and [ABI.md](ABI.md) are the whole contract.
 ## Zero to playable in two minutes
 
 ```sh
-go run github.com/shellcade/gamekit/cmd/gamekit@latest new mygame
+go run github.com/shellcade/kit/cmd/kit@latest new mygame
 cd mygame && go mod tidy && go run .
 ```
 
@@ -82,9 +82,9 @@ control vocabulary so your game matches every other game's conventions
 (↑/k, ↓/j, Enter/Space confirm, Esc/q back):
 
 ```go
-switch gamekit.Resolve(in, gamekit.CtxNav) {
-case gamekit.ActUp:      // ...
-case gamekit.ActConfirm: // ...
+switch kit.Resolve(in, kit.CtxNav) {
+case kit.ActUp:      // ...
+case kit.ActConfirm: // ...
 }
 ```
 
@@ -96,7 +96,7 @@ h/s/d), `CtxText` for typing games.
 
 ```go
 store := r.Services().Accounts.For(p).Store()
-store.Set(ctx, "balance", []byte("990"), gamekit.MergeSum)
+store.Set(ctx, "balance", []byte("990"), kit.MergeSum)
 v, ok, _ := store.Get(ctx, "balance")
 ```
 

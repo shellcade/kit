@@ -1,4 +1,4 @@
-# gamekit — the shellcade game developer kit
+# kit — the shellcade game developer kit
 
 Write multiplayer terminal games for [shellcade.com](https://shellcade.com) —
 develop and test locally with zero setup, compile to WebAssembly, submit the
@@ -9,7 +9,7 @@ artifact. This module is the complete contract: the `wire` package and
 **Start with [GUIDE.md](GUIDE.md)** — or go straight to playing:
 
 ```sh
-go run github.com/shellcade/gamekit/cmd/gamekit@latest new mygame
+go run github.com/shellcade/kit/cmd/kit@latest new mygame
 cd mygame && go mod tidy && go run .
 ```
 
@@ -17,20 +17,20 @@ cd mygame && go mod tidy && go run .
 
 | Path | What |
 |---|---|
-| `gamekit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
+| `kit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
 | `wire/` | the ABI as code: version, names, packed payload codecs |
-| `cmd/gamekit` | author CLI: `gamekit new <name>` scaffolds a playable game |
+| `cmd/kit` | author CLI: `kit new <name>` scaffolds a playable game |
 | `examples/pokies` | the reference game (uses every SDK feature) |
 | `ABI.md` / `GUIDE.md` | the normative contract / the authoring guide |
 
 ## Write a game
 
-Implement `gamekit.Game` + `gamekit.Handler` (six callbacks: OnStart/OnJoin/
-OnLeave/OnInput/OnWake/OnClose), call `gamekit.Run(game)` and add the eight
+Implement `kit.Game` + `kit.Handler` (six callbacks: OnStart/OnJoin/
+OnLeave/OnInput/OnWake/OnClose), call `kit.Run(game)` and add the eight
 `//go:export` trampolines — see `examples/pokies/main.go`.
 
 Rules of the road:
-- **Frames are pointers** (`*gamekit.Frame`). A frame is ~46KB; by-value frames
+- **Frames are pointers** (`*kit.Frame`). A frame is ~46KB; by-value frames
   explode TinyGo compile time (3s → 3min) and artifact size (600KB → 9MB).
 - **Time comes from `r.Now()`** (CallContext time) and code runs only when the
   host calls you — built-in timers/goroutines never fire. Drive animations and
@@ -41,7 +41,7 @@ Rules of the road:
 ## The dev loop (three gears)
 
 1. **Inner loop — no wasm at all (~0.1s):** `go run .` in your game directory
-   plays the game natively in your terminal via `gamekit.Main` — normal Go
+   plays the game natively in your terminal via `kit.Main` — normal Go
    builds, delve, prints, real stack traces.
    Flags: `-seed N -heartbeat 50ms -config k=v -handle name`.
 2. **Artifact check (~4s):** build the real wasm and verify it:
@@ -55,7 +55,7 @@ Rules of the road:
 - `-opt=0` is NOT supported (giant unoptimized functions crash wazero's
   arm64 compiler).
 - `-gc=leaking` is required for now: TinyGo 0.41's conservative GC faults in
-  this reactor configuration (recorded finding; gamekit keeps the steady state
+  this reactor configuration (recorded finding; kit keeps the steady state
   allocation-free so the leak rate is negligible for play sessions).
 
 ## Test and play

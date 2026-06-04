@@ -1,4 +1,4 @@
-# gamekit — repo guide for Claude
+# kit — repo guide for Claude
 
 This is the **PUBLIC** shellcade game developer kit: the wasm game ABI
 (normative `ABI.md` + the `wire` package as its code form), the Go guest SDK,
@@ -34,7 +34,7 @@ normative contract). Improving these is always in scope.
 Versions/changelogs are driven by **changesets**: every user-visible change
 adds a `.changeset/*.md` (run `npx changeset`). Merging to main lets the
 changesets action open a Version Packages PR; merging THAT pushes the
-`vX.Y.Z` tag, and **GoReleaser** builds the `gamekit` CLI binaries onto the
+`vX.Y.Z` tag, and **GoReleaser** builds the `kit` CLI binaries onto the
 GitHub release. Never hand-edit CHANGELOG.md or push tags manually.
 
 ## Build & test
