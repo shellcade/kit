@@ -10,7 +10,8 @@ import (
 
 // Run registers the game with the export trampolines. Call it from an init()
 // (or main()) in the plugin's main package; the eight //go:export functions in
-// main delegate to the Export* functions below (see examples/pokies/main.go).
+// main delegate to the Export* functions below (`shellcade-kit new` scaffolds
+// exactly this main package).
 //
 // One plugin instance == one room, so package-level state is per-room state.
 var (
