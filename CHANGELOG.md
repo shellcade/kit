@@ -1,5 +1,11 @@
 # kit
 
+## 0.5.0
+
+- One author tool: scaffolding moved into `shellcade-kit new` (the same binary
+  that verifies and plays artifacts — download from this repo's Releases).
+  `cmd/kit` removed; the module tag remains the release for the SDK itself.
+
 ## 0.4.0 — playtest feedback round 1 (asteroids)
 
 - **keyhold** package: held-key state derived from terminal auto-repeat —

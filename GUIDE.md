@@ -8,10 +8,17 @@ shellcade's source; this module and [ABI.md](ABI.md) are the whole contract.
 
 ## Zero to playable in two minutes
 
+Grab **`shellcade-kit`** — the one author tool (scaffold, verify, play
+artifacts) — from this repo's
+[Releases](https://github.com/shellcade/kit/releases), then:
+
 ```sh
-go run github.com/shellcade/kit/cmd/kit@latest new mygame
+shellcade-kit new mygame
 cd mygame && go mod tidy && go run .
 ```
+
+(macOS may quarantine the downloaded binary:
+`xattr -d com.apple.quarantine shellcade-kit` clears it.)
 
 You're playing your game. Edit `main.go`, `go run .` again — the inner loop is
 a normal Go program (debugger, prints, sub-second builds). The wasm toolchain

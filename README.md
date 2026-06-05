@@ -6,10 +6,12 @@ artifact. This module is the complete contract: the `wire` package and
 [ABI.md](ABI.md) define the ABI, and no shellcade-private code is needed
 (or referenced) anywhere here.
 
-**Start with [GUIDE.md](GUIDE.md)** — or go straight to playing:
+**Start with [GUIDE.md](GUIDE.md)** — or go straight to playing: grab
+**`shellcade-kit`** from this repo's [Releases](https://github.com/shellcade/kit/releases)
+(the one author tool: scaffold, verify, and play artifacts), then:
 
 ```sh
-go run github.com/shellcade/kit/cmd/kit@latest new mygame
+shellcade-kit new mygame
 cd mygame && go mod tidy && go run .
 ```
 
@@ -18,8 +20,8 @@ cd mygame && go mod tidy && go run .
 | Path | What |
 |---|---|
 | `kit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
+| `keyhold/`, `kittest/` | held-keys helper for action games; in-memory test double |
 | `wire/` | the ABI as code: version, names, packed payload codecs |
-| `cmd/kit` | author CLI: `kit new <name>` scaffolds a playable game |
 | `examples/pokies` | the reference game (uses every SDK feature) |
 | `ABI.md` / `GUIDE.md` | the normative contract / the authoring guide |
 
