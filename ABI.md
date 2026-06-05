@@ -157,3 +157,44 @@ artifacts. Breaking changes bump the major.
   buffers, freed Extism allocations).
 - Keep per-callback work bounded: the host enforces a wall-clock deadline per
   callback and a linear-memory cap per instance.
+
+## 7. Non-Go guests (proved with a Rust fixture)
+
+The ABI is language-neutral; a Rust guest built from this document alone
+passes full conformance, including hibernation determinism. Two contract
+clarifications from that exercise:
+
+- **Do NOT use the extism-pdk `#[host_fn]` macro for the §3 host functions.**
+  It heap-wraps every declared argument and passes a memory OFFSET, so scalar
+  parameters (roster indices, log levels) arrive corrupted. Declare the host
+  functions as raw wasm imports instead, passing scalars directly and buffer
+  parameters as Extism memory offsets:
+
+  ```rust
+  #[link(wasm_import_module = "extism:host/user")]
+  extern "C" {
+      fn send(player_idx: u64, frame_off: u64);
+      fn log(level: u64, msg_off: u64);
+      // …the rest of §3, same shapes
+  }
+  ```
+
+  The PDK remains useful for kernel plumbing only: `extism::load_input`,
+  `Memory::from_bytes(..).offset()` / `Memory::find(off)` / `free`, and
+  `set_output`.
+- **Exports are bare `#[no_mangle] pub extern "C" fn name() -> i32`** (0 = ok),
+  matching §2 — not `#[plugin_fn]`, which imposes its own input/output
+  handling. Build as `cdylib` for `wasm32-wasip1`.
+
+Measured against the same conformance script as the Go fixture: Rust artifact
+~34 KB (release, `opt-level="s"` + lto + strip + panic=abort) with ~1.1 MiB
+peak linear memory; TinyGo dev-profile artifact ~51 KB with 256 KiB peak. Both
+are far under the 32 MiB cap — pick your language for ergonomics, not budgets.
+
+## 8. The hibernation contract (one sentence)
+
+Your room must be fully reconstructable from **guest linear memory + the
+RoomConfig + the CallContext** — never derive behavior from anything else
+(host wall-time offsets, ambient entropy, import-time state). The conformance
+harness verifies this: it snapshots your room mid-script, restores it into a
+fresh instance, and requires byte-identical frames thereafter.
