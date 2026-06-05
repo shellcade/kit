@@ -42,11 +42,18 @@ func decodeDirtyRows(prev, payload []byte) []byte {
 	return out
 }
 
+// decodeRunList parses the v2 delta container: a 9-byte header (u8 flags,
+// u32 epoch, u16 runCount, u16 reserved) then runCount runs. The keyframe bit
+// (flags bit0) needs no special handling on reconstruct — a keyframe is just a
+// run-list whose runs (here, one run of all 1920 cells) overwrite a baseline
+// the host would have zeroed; against the bench's prev baseline the single
+// full-cover run reproduces next exactly, so the same loop is lossless for both
+// the steady-state delta and the keyframe form.
 func decodeRunList(prev, payload []byte) []byte {
 	out := make([]byte, FrameBytes)
 	copy(out, prev)
-	runs := int(binary.LittleEndian.Uint16(payload[0:]))
-	p := 2
+	runs := int(binary.LittleEndian.Uint16(payload[5:])) // u16 runCount @ offset 5
+	p := DeltaHeaderBytes
 	for k := 0; k < runs; k++ {
 		start := int(binary.LittleEndian.Uint16(payload[p:]))
 		p += 2
@@ -69,14 +76,9 @@ func decodeSkipIdentical(prev, payload []byte) []byte {
 	return out
 }
 
-func decodeRunListOrFull(prev, payload []byte) []byte {
-	if len(payload) == 0 {
-		out := make([]byte, FrameBytes)
-		copy(out, prev)
-		return out
-	}
-	if payload[0] == 0 {
-		return decodeFull(prev, payload[1:])
-	}
-	return decodeRunList(prev, payload[1:])
+// decodeRunListOrKeyframe parses either the steady-state run-list delta or the
+// keyframe form — both are the same v2 container (the keyframe is one run of all
+// 1920 cells with flags bit0 set), so a single run-list parse reconstructs both.
+func decodeRunListOrKeyframe(prev, payload []byte) []byte {
+	return decodeRunList(prev, payload)
 }

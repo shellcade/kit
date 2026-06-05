@@ -24,7 +24,7 @@ func encoders() []encoder {
 		{"DIRTY-ROWS", encodeDirtyRows, decodeDirtyRows},
 		{"RUN-LIST", encodeRunList, decodeRunList},
 		{"SKIP-IDENTICAL", encodeSkipIdentical, decodeSkipIdentical},
-		{"RUN+FULL-fallback", encodeRunListOrFull, decodeRunListOrFull},
+		{"RUN+KEYFRAME-fallback", encodeRunListOrKeyframe, decodeRunListOrKeyframe},
 	}
 }
 

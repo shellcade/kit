@@ -13,6 +13,42 @@ import "encoding/binary"
 // FrameBytes + a small framing overhead; bench buffers are sized to MaxEncoded.
 const MaxEncoded = FrameBytes + FrameCells*2 + 8 // generous: worst-case cell-list
 
+// DeltaHeaderBytes is the normative frame-delta container header (ABI v2,
+// game-abi spec): u8 flags (bit0 = keyframe), u32 epoch, u16 runCount,
+// u16 reserved = 0. Every send/identical in v2 carries the delta container, so
+// the run-list encoders below stamp this header — the byte counts they report
+// are exactly what a production guest puts on the wire.
+const DeltaHeaderBytes = 9
+
+// RunHeaderBytes is the per-run prefix inside a run-list payload: u16 startIndex
+// + u16 runLen, followed by runLen*16 packed cells.
+const RunHeaderBytes = 4
+
+// flagKeyframe is header flags bit0: the payload is a self-contained keyframe
+// (full frame), the bootstrap/full-frame form of the container.
+const flagKeyframe = 0x01
+
+// KeyframeBytes is the worst-case fallback size: the keyframe form is the
+// 9-byte header (bit0 set) + ONE run covering all 1920 cells (u16 start=0,
+// u16 len=1920) + the full 30720-byte packed grid = 30733 B. This is the v2
+// worst case (the round-1 "RUN+FULL fallback" 1-byte tag is obsolete: in v2 the
+// container IS the frame path and the keyframe form is the bootstrap/fallback).
+const KeyframeBytes = DeltaHeaderBytes + RunHeaderBytes + FrameBytes // 30733
+
+// putDeltaHeader writes the normative 9-byte container header into dst[0:9].
+// epoch is modeled as 0 here (the byte COUNT is epoch-independent; the host is
+// the sole epoch authority and the field is always present and fixed-width).
+func putDeltaHeader(dst []byte, keyframe bool, runCount int) {
+	if keyframe {
+		dst[0] = flagKeyframe
+	} else {
+		dst[0] = 0
+	}
+	binary.LittleEndian.PutUint32(dst[1:], 0)             // u32 epoch (host-owned)
+	binary.LittleEndian.PutUint16(dst[5:], uint16(runCount)) // u16 runCount
+	binary.LittleEndian.PutUint16(dst[7:], 0)             // u16 reserved = 0
+}
+
 // cellEqual reports whether the 16-byte cell at offset o is identical in a and b.
 func cellEqual(a, b []byte, o int) bool {
 	// Compare as two uint64 loads: the packed cell is exactly 16 bytes and
@@ -114,13 +150,15 @@ func encodeDirtyRows(prev, next, dst []byte) int {
 // ---- (c) RUN-LIST ---------------------------------------------------------
 
 // encodeRunList coalesces changed cells into runs of CONSECUTIVE changed cells.
-// Per run: u16 start index + u16 run length + (len * 16) packed cells. A header
-// u16 carries the run count. This amortizes the per-cell index overhead of
-// CELL-LIST across each contiguous span (the common case: a changed word, a
-// changed row segment), at 4 bytes/run + 16 bytes/cell.
-// Layout: u16 runCount, then runCount * (u16 start + u16 len + len*16 bytes).
+// This is the v2 normative delta container: the 9-byte header (u8 flags,
+// u32 epoch, u16 runCount, u16 reserved) followed by runCount runs, each
+// {u16 startIndex, u16 runLen, runLen*16 packed cells}. It amortizes the
+// per-cell index overhead of CELL-LIST across each contiguous span (a changed
+// word, a row segment), at 4 bytes/run + 16 bytes/cell. A runCount==0 payload
+// (the 9-byte header alone) is the legal "no change" delta.
+// Layout: [9-byte header] then runCount * (u16 start + u16 len + len*16 bytes).
 func encodeRunList(prev, next, dst []byte) int {
-	p := 2 // reserve run count
+	p := DeltaHeaderBytes // reserve the container header
 	runs := 0
 	i := 0
 	for i < FrameCells {
@@ -141,7 +179,7 @@ func encodeRunList(prev, next, dst []byte) int {
 		p += runLen * CellBytes
 		runs++
 	}
-	binary.LittleEndian.PutUint16(dst[0:], uint16(runs))
+	putDeltaHeader(dst, false, runs)
 	return p
 }
 
@@ -171,20 +209,35 @@ func framesEqual(a, b []byte) bool {
 	return true
 }
 
-// ---- (e) RUN-LIST + full-frame fallback -----------------------------------
+// ---- (e) RUN-LIST + keyframe fallback (v2) ---------------------------------
 
-// encodeRunListOrFull is RUN-LIST with the practical safety valve: if the delta
-// would exceed the full frame size, ship the full frame instead (one leading
-// byte distinguishes the two: 0 = full frame follows, 1 = run-list follows).
-// This caps the worst case at FrameBytes+1 and is the encoding a real
-// implementation would ship. It is benchmarked to show the cliff is bounded.
-func encodeRunListOrFull(prev, next, dst []byte) int {
-	// Encode run-list into the tail of dst (after the 1-byte tag), then decide.
-	n := encodeRunList(prev, next, dst[1:])
-	if n >= FrameBytes {
-		dst[0] = 0
-		return 1 + copy(dst[1:], next)
+// encodeKeyframe emits the v2 KEYFRAME FORM: the 9-byte container header with
+// flags bit0 set + exactly ONE run covering all 1920 cells (u16 start=0,
+// u16 len=1920) + the full 30720-byte packed grid. This is the bootstrap /
+// full-frame mechanism of the v2 container and the worst-case fallback
+// (KeyframeBytes = 30733). The round-1 "RUN+FULL fallback" 1-byte tag is gone:
+// in v2 the delta container IS the frame path, and the keyframe is its
+// self-contained full-frame member (accepted by the host regardless of epoch).
+func encodeKeyframe(_ /*prev*/, next, dst []byte) int {
+	putDeltaHeader(dst, true, 1)
+	p := DeltaHeaderBytes
+	binary.LittleEndian.PutUint16(dst[p:], 0)          // start index 0
+	binary.LittleEndian.PutUint16(dst[p+2:], FrameCells) // run length 1920
+	p += RunHeaderBytes
+	p += copy(dst[p:], next)
+	return p
+}
+
+// encodeRunListOrKeyframe is RUN-LIST with the v2 safety valve: if the delta
+// payload would meet or exceed the keyframe form's size, ship the keyframe form
+// instead. This caps the worst case at KeyframeBytes (30733) and is exactly the
+// encoding a production guest ships — the run-list delta in the steady state,
+// degrading to a self-contained keyframe on the full-change cliff. It is
+// benchmarked to show the cliff is bounded.
+func encodeRunListOrKeyframe(prev, next, dst []byte) int {
+	n := encodeRunList(prev, next, dst)
+	if n >= KeyframeBytes {
+		return encodeKeyframe(prev, next, dst)
 	}
-	dst[0] = 1
-	return 1 + n
+	return n
 }

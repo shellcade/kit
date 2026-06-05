@@ -91,7 +91,7 @@ func loadSeq(path string) (*Sequence, error) {
 // to parse is fatal.
 func realScenarios() ([]*Sequence, error) {
 	var out []*Sequence
-	for _, name := range []string{"tic-tac-toe", "blackjack", "pokies", "shellracer"} {
+	for _, name := range []string{"tic-tac-toe", "chess", "blackjack", "pokies", "shellracer"} {
 		p := filepath.Join("testdata", name+".fseq")
 		if _, err := os.Stat(p); err != nil {
 			continue
