@@ -34,8 +34,10 @@ normative contract). Improving these is always in scope.
 Versions/changelogs are driven by **changesets**: every user-visible change
 adds a `.changeset/*.md` (run `npx changeset`). Merging to main lets the
 changesets action open a Version Packages PR; merging THAT pushes the
-`vX.Y.Z` tag, and **GoReleaser** builds the `kit` CLI binaries onto the
-GitHub release. Never hand-edit CHANGELOG.md or push tags manually.
+`vX.Y.Z` tag — and the tag IS the release (a Go module needs nothing more;
+the `kit` CLI runs via `go run .../cmd/kit@latest`, no binaries). The GitHub
+Releases page carries only the `shellcade-kit` binaries, published from the
+private repo. Never hand-edit CHANGELOG.md or push tags manually.
 
 ## Build & test
 
