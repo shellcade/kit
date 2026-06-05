@@ -72,7 +72,7 @@ func encodeFrame(f *Frame) []byte {
 		for col := 0; col < Cols; col++ {
 			c := &f.Cells[row][col]
 			wire.PutCell(frameScratch[:], i, wire.Cell{
-				Rune:  c.Rune,
+				Rune: c.Rune, Cp2: c.Cp2, Cp3: c.Cp3,
 				FGSet: c.FG.set, FGR: c.FG.r, FGG: c.FG.g, FGB: c.FG.b,
 				BGSet: c.BG.set, BGR: c.BG.r, BGG: c.BG.g, BGB: c.BG.b,
 				Attr: uint8(c.Attr),

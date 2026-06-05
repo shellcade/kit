@@ -54,9 +54,14 @@ type Style struct {
 	Attr Attr
 }
 
-// Cell is a single drawable position.
+// Cell is a single drawable position. Rune is the base code point; Cp2/Cp3
+// carry the extra code points of a grapheme cluster (VS16, skin-tone modifier,
+// keycap U+20E3, ZWJ pieces), 0 = unused. Single-code-point authoring leaves
+// Cp2/Cp3 zero by zero value, so SetRune/Set/Text/SetWide are unchanged.
 type Cell struct {
 	Rune rune
+	Cp2  rune
+	Cp3  rune
 	FG   Color
 	BG   Color
 	Attr Attr
@@ -125,6 +130,67 @@ func (f *Frame) SetWide(row, col int, r rune, st Style) int {
 	f.Cells[row][col] = Cell{Rune: r, FG: st.FG, BG: st.BG, Attr: st.Attr}
 	f.Cells[row][col+1] = Cell{FG: st.FG, BG: st.BG, Attr: st.Attr, Cont: true}
 	return col + 2
+}
+
+// SetGrapheme writes a grapheme cluster of up to three code points into one
+// cell: the base goes to Rune, the second to Cp2, the third to Cp3 (covering
+// VS16 emoji, skin-tone-modified emoji, and keycaps like base + U+20E3). It
+// REFUSES a cluster that decodes to more than three code points (e.g. a family
+// ZWJ emoji) or to zero code points: it draws nothing and returns col unchanged
+// — refusing rather than truncating to a different, valid-looking glyph,
+// mirroring SetWide's drop-on-overflow philosophy. On success it returns col+1.
+// The SDK never measures display width; width-1 is the author's contract here.
+func (f *Frame) SetGrapheme(row, col int, cluster string, st Style) int {
+	if !inBounds(row, col) {
+		return col
+	}
+	base, cp2, cp3, ok := decodeCluster(cluster)
+	if !ok {
+		return col // >3 or 0 code points: refuse, draw nothing
+	}
+	f.Cells[row][col] = Cell{Rune: base, Cp2: cp2, Cp3: cp3, FG: st.FG, BG: st.BG, Attr: st.Attr}
+	return col + 1
+}
+
+// SetGraphemeWide is the width-2 companion of SetGrapheme, mirroring SetWide:
+// the cluster occupies (row, col) and a continuation cell at (row, col+1) marked
+// Cont=true. It refuses an over-/zero-length cluster (draws nothing, returns col
+// unchanged) and refuses at the right edge (col == Cols-1) exactly like SetWide,
+// dropping rather than drawing a half-glyph. On success returns col+2.
+func (f *Frame) SetGraphemeWide(row, col int, cluster string, st Style) int {
+	if !inBounds(row, col) || col+1 >= Cols {
+		return col
+	}
+	base, cp2, cp3, ok := decodeCluster(cluster)
+	if !ok {
+		return col
+	}
+	f.Cells[row][col] = Cell{Rune: base, Cp2: cp2, Cp3: cp3, FG: st.FG, BG: st.BG, Attr: st.Attr}
+	f.Cells[row][col+1] = Cell{FG: st.FG, BG: st.BG, Attr: st.Attr, Cont: true}
+	return col + 2
+}
+
+// decodeCluster decodes a string into up to three code points. ok is false when
+// the cluster has zero code points or more than three (the unsupported case).
+func decodeCluster(cluster string) (base, cp2, cp3 rune, ok bool) {
+	n := 0
+	for _, r := range cluster {
+		switch n {
+		case 0:
+			base = r
+		case 1:
+			cp2 = r
+		case 2:
+			cp3 = r
+		default:
+			return 0, 0, 0, false // >3 code points: unsupported
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, 0, 0, false
+	}
+	return base, cp2, cp3, true
 }
 
 // Text writes a string left-to-right, clamped to the row. Returns the next col.
