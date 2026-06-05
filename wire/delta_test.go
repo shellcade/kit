@@ -161,8 +161,8 @@ func TestCheckFrameDeltaRejections(t *testing.T) {
 		"out-of-bounds run": func() []byte {
 			b := make([]byte, DeltaHeaderBytes+RunHeaderBytes+CellBytes)
 			putDeltaHeader(b, false, 0, 1)
-			binary.LittleEndian.PutUint16(b[9:], FrameCells-0)  // start at 1920
-			binary.LittleEndian.PutUint16(b[11:], 1)            // len 1 -> 1921 > 1920
+			binary.LittleEndian.PutUint16(b[9:], FrameCells-0) // start at 1920
+			binary.LittleEndian.PutUint16(b[11:], 1)           // len 1 -> 1921 > 1920
 			return b
 		},
 		"overlapping runs": func() []byte {

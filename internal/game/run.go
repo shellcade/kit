@@ -40,11 +40,23 @@ func ExportMeta() int32 {
 	return 0
 }
 
-// decodeCall decodes the input payload into a Room for this callback.
+// decodeCall decodes the input payload into a Room for this callback. It also
+// runs the roster-change backstop (D7): a cheap fixed-scratch fingerprint of the
+// roster is compared to the previous callback's; on any change (join/leave/
+// index-shift) every per-index baseline is invalidated so the next send to each
+// slot is a keyframe. This is the host-authority backstop, not the primary
+// resync (the host's epoch bump is) — but it keeps the guest's baselines from
+// diffing across a roster renumber.
 func decodeCall() (*room, *wire.Rd) {
 	ctx, r := decodeCtx(inputBytes())
 	if rng == nil {
 		rng = rand.New(rand.NewSource(ctx.cfg.Seed))
+	}
+	print := rosterFingerprint(ctx.members)
+	if !lastRosterSet || print != lastRosterPrint {
+		invalidateBaselines()
+		lastRosterPrint = print
+		lastRosterSet = true
 	}
 	return &room{ctx: ctx, rng: rng}, r
 }
@@ -83,7 +95,11 @@ func ExportLeave() int32 {
 	return 0
 }
 
-// ExportInput backs the input export.
+// ExportInput backs the input export. Per the v2 tolerant-reader rule, an input
+// whose kind or named key the guest does not recognise is SILENTLY IGNORED (no
+// fault, no callback) — future input growth (mouse, paste, focus, new keys)
+// extends this enum additively without breaking this artifact. The wire decoder
+// already tolerates trailing payload bytes beyond the fields read here.
 func ExportInput() int32 {
 	rm, r := decodeCall()
 	p, ok := decodePlayer(rm, r)
@@ -94,6 +110,9 @@ func ExportInput() int32 {
 	in.Kind = InputKind(r.U8())
 	in.Rune = rune(r.U32())
 	in.Key = Key(r.U8())
+	if r.Bad || !knownInput(in) {
+		return 0 // unknown kind/key (or short read): ignore, no callback
+	}
 	handler.OnInput(rm, p, in)
 	return 0
 }

@@ -329,7 +329,7 @@ func (r *nativeRoom) Now() time.Time {
 	}
 	return time.Now()
 }
-func (r *nativeRoom) Settled() bool      { return r.ended }
+func (r *nativeRoom) Settled() bool { return r.ended }
 
 func (r *nativeRoom) Has(p Player) bool {
 	for _, m := range r.members {
@@ -438,6 +438,15 @@ func frameToANSI(f *Frame) string {
 				ru = ' '
 			}
 			b.WriteRune(ru)
+			// Burst the grapheme cluster's extra code points immediately after
+			// the base, before the next cell, so the terminal receives the
+			// cluster (base VS16 / base + keycap / base ZWJ piece) unbroken.
+			if c.Cp2 != 0 {
+				b.WriteRune(c.Cp2)
+				if c.Cp3 != 0 {
+					b.WriteRune(c.Cp3)
+				}
+			}
 		}
 		b.WriteString("\x1b[0m")
 		if row < Rows-1 {

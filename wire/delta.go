@@ -115,7 +115,7 @@ func BuildFrameDelta(base, next, dst []byte, epoch uint32) int {
 func BuildKeyframe(next, dst []byte, epoch uint32) int {
 	putDeltaHeader(dst, true, epoch, 1)
 	p := DeltaHeaderBytes
-	binary.LittleEndian.PutUint16(dst[p:], 0)          // start index 0
+	binary.LittleEndian.PutUint16(dst[p:], 0)            // start index 0
 	binary.LittleEndian.PutUint16(dst[p+2:], FrameCells) // run length 1920
 	p += RunHeaderBytes
 	p += copy(dst[p:], next)

@@ -52,9 +52,9 @@ const (
 	Rows       = 24
 	Cols       = 80
 	CellBytes  = 24
-	FrameCells = Rows * Cols          // 1920
+	FrameCells = Rows * Cols            // 1920
 	FrameBytes = FrameCells * CellBytes // 46080
-	RowBytes   = Cols * CellBytes     // 1920
+	RowBytes   = Cols * CellBytes       // 1920
 )
 
 // Player kind codes.
@@ -356,9 +356,9 @@ func DecodeMeta(b []byte) (Meta, error) {
 // load-bearing for delta determinism and hibernation byte-identity.
 func PutCell(buf []byte, i int, c Cell) {
 	o := i * CellBytes
-	binary.LittleEndian.PutUint32(buf[o:], uint32(c.Rune))   // rune @0
-	binary.LittleEndian.PutUint32(buf[o+4:], uint32(c.Cp2))  // cp2  @4
-	binary.LittleEndian.PutUint32(buf[o+8:], uint32(c.Cp3))  // cp3  @8
+	binary.LittleEndian.PutUint32(buf[o:], uint32(c.Rune))  // rune @0
+	binary.LittleEndian.PutUint32(buf[o+4:], uint32(c.Cp2)) // cp2  @4
+	binary.LittleEndian.PutUint32(buf[o+8:], uint32(c.Cp3)) // cp3  @8
 	if c.FGSet {
 		buf[o+12], buf[o+13], buf[o+14], buf[o+15] = 1, c.FGR, c.FGG, c.FGB
 	} else {

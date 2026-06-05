@@ -4,14 +4,22 @@ package game
 
 import pdk "github.com/extism/go-pdk"
 
-// Raw imports of the shellcade host functions (ABI v1, namespace
+// Raw imports of the shellcade host functions (ABI v2, namespace
 // "extism:host/user"). Pointer-typed params/returns are Extism memory offsets.
 
+// hostSend carries the delta container at frameOff for the given roster slot and
+// RETURNS the host-authoritative epoch the guest must stamp that slot's baseline
+// with. The wasm boundary slot is i64/uint64; the carried value is the u32
+// epoch (low 32 bits; the upper 32 are reserved-zero and ignored).
+//
 //go:wasmimport extism:host/user send
-func hostSend(playerIdx uint64, frameOff uint64)
+func hostSend(playerIdx uint64, frameOff uint64) uint64
 
+// hostIdentical carries the delta container for the broadcast slot and RETURNS
+// the broadcast epoch (same u32-in-i64 convention as hostSend).
+//
 //go:wasmimport extism:host/user identical
-func hostIdentical(frameOff uint64)
+func hostIdentical(frameOff uint64) uint64
 
 //go:wasmimport extism:host/user set_input_context
 func hostSetInputContext(ctx uint64)
