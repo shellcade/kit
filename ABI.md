@@ -75,7 +75,6 @@ means not-found.
 | `kv_set` | (i64 playerIdx, ptr key, ptr val, ptr rule) | rule: `keep-winner` `keep-loser` `sum` `max`; for `sum`/`max` the value MUST be a base-10 ASCII int64 (unparsable values degrade to keep-winner at merge time) |
 | `kv_delete` | (i64 playerIdx, ptr key) | |
 | `config_get` | (ptr key) → ptr | read-only per-game config |
-| `profile_get` | (i64 playerIdx) → ptr | lifetime stats (reserved; may return 0) |
 
 Scoping is host-side: the guest names only a roster index and a key — the
 account and the game's namespace are derived by the host. A guest cannot

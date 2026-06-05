@@ -44,7 +44,6 @@ const (
 	FnKVSet           = "kv_set"
 	FnKVDelete        = "kv_delete"
 	FnConfigGet       = "config_get"
-	FnProfileGet      = "profile_get"
 )
 
 // Frame geometry: 80x24 cells, 16 bytes per cell.
