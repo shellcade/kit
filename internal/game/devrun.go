@@ -31,8 +31,17 @@ func Main(g Game) {
 	flag.Var(cfgFlag(cfgVals), "config", "KEY=VALUE per-game config (repeatable; value may be @file)")
 	flag.Parse()
 
+	// -seed makes the whole run reproducible: a fixed RNG seed AND a virtual
+	// clock (see below). Distinguish "flag given" from "left at default 0" so a
+	// deliberate -seed 0 still goes deterministic.
+	seedSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "seed" {
+			seedSet = true
+		}
+	})
 	s := *seed
-	if s == 0 {
+	if !seedSet {
 		s = time.Now().UnixNano()
 	}
 	meta := g.Meta()
@@ -58,6 +67,15 @@ func Main(g Game) {
 		rng:     rand.New(rand.NewSource(s)),
 		kv:      map[string][]byte{},
 		config:  cfgVals,
+	}
+	// Virtual clock: with -seed, the room clock starts at a fixed epoch derived
+	// from the seed and advances by exactly one heartbeat per wake (and never
+	// otherwise) — so a -seed run is bit-for-bit reproducible the way the wasm
+	// determinism check requires. Without -seed, Now() is the wall clock.
+	if seedSet {
+		r.virtual = true
+		r.beat = *heartbeat
+		r.clock = seedEpoch(s)
 	}
 	h := g.NewRoom(cfg, r.Services())
 
@@ -92,6 +110,9 @@ func Main(g Game) {
 	for !r.ended {
 		select {
 		case <-tick.C:
+			if r.virtual {
+				r.clock = r.clock.Add(r.beat) // advance once per wake, nowhere else
+			}
 			h.OnWake(r)
 		case in, ok := <-keys:
 			if !ok {
@@ -199,13 +220,35 @@ type nativeRoom struct {
 	kv         map[string][]byte // keyed by account + key
 	config     map[string]string
 	ended      bool
+
+	virtual bool          // -seed: Now() reads the virtual clock below
+	clock   time.Time     // virtual room clock; advances one beat per wake
+	beat    time.Duration // heartbeat interval (the per-wake clock step)
+}
+
+// seedEpoch derives a fixed virtual-clock start from the run seed, so the same
+// -seed always begins at the same instant. The year-2000 base keeps the value
+// human-readable in logs while staying well clear of the zero time.
+func seedEpoch(seed int64) time.Time {
+	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Spread by seed but keep it bounded and positive (mod a ~year of seconds).
+	off := seed % (365 * 24 * 3600)
+	if off < 0 {
+		off += 365 * 24 * 3600
+	}
+	return base.Add(time.Duration(off) * time.Second)
 }
 
 func (r *nativeRoom) Members() []Player  { return r.members }
 func (r *nativeRoom) Count() int         { return len(r.members) }
 func (r *nativeRoom) Config() RoomConfig { return r.cfg }
 func (r *nativeRoom) Rand() *rand.Rand   { return r.rng }
-func (r *nativeRoom) Now() time.Time     { return time.Now() }
+func (r *nativeRoom) Now() time.Time {
+	if r.virtual {
+		return r.clock
+	}
+	return time.Now()
+}
 func (r *nativeRoom) Settled() bool      { return r.ended }
 
 func (r *nativeRoom) Has(p Player) bool {

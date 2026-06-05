@@ -92,10 +92,13 @@ if r.Now().After(due) { rm.landReel(i) }
 language's `time.Now()` returns (the arcade virtualizes the clock — accidental
 use is harmless, by design).
 
-> **Determinism caveat:** in the native `go run .` runner, `r.Now()` is the
-> real wall clock, so time-derived behavior is NOT reproducible under `-seed`
-> there. The wasm path (`shellcade-kit check`) is the determinism source of
-> record, and the `kittest` package gives you a virtual clock in unit tests.
+> **Native clock:** pass `-seed` and `r.Now()` becomes a **virtual** clock —
+> it starts at a fixed epoch derived from the seed and advances by exactly one
+> heartbeat per `OnWake` (and at no other moment), so a `-seed` run is
+> reproducible: same seed, same frames. Without `-seed`, `r.Now()` is the real
+> wall clock (handy for feeling out timing live). The wasm path
+> (`shellcade-kit check`) is still the determinism source of record, and the
+> `kittest` package gives you a virtual clock in unit tests.
 
 ## Players, input, and controls
 
@@ -229,7 +232,7 @@ code, same verdict.
 | `Members/Has/Count` | roster reads | free (local) |
 | `Config` | mode, capacity, seed | free (local) |
 | `Rand` | seeded PRNG | deterministic under `-seed` |
-| `Now` | room clock | wall-clock in the native runner (see caveat) |
+| `Now` | room clock | wall-clock natively, virtual under `-seed` (see Native clock) |
 | `Settled` | has the room ended? | |
 | `Send(p, *Frame)` | one player's view | copies immediately — reuse the frame |
 | `Identical(*Frame)` | same view to everyone | |
