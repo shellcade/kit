@@ -2,9 +2,12 @@
 
 package main
 
-import kit "github.com/shellcade/kit"
+import (
+	kit "github.com/shellcade/kit"
+	"github.com/shellcade/kit/examples/pokies/pokies"
+)
 
-func init() { kit.Run(Game{}) }
+func init() { kit.Run(pokies.Game{}) }
 
 // The eight ABI exports, trampolined to the gamekit SDK.
 
