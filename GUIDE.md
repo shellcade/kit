@@ -69,8 +69,11 @@ Three rules shape everything:
 ## Time, the wake way
 
 Everything the standard library's timers would do becomes a comparison
-against `r.Now()` inside `OnWake`. The three idioms (all live in
-[examples/pokies](examples/pokies)):
+against `r.Now()` inside `OnWake`. The idioms below all live in
+[examples/pokies](examples/pokies) — its
+[README](examples/pokies/README.md) is the line-referenced cookbook
+(one-shots, staggered schedules, derived animation clocks, turn timeouts, and
+a "how do I port a timer?" table):
 
 ```go
 // One-shot (was: time.AfterFunc) — store a deadline, check it on wake.
@@ -92,10 +95,13 @@ if r.Now().After(due) { rm.landReel(i) }
 language's `time.Now()` returns (the arcade virtualizes the clock — accidental
 use is harmless, by design).
 
-> **Determinism caveat:** in the native `go run .` runner, `r.Now()` is the
-> real wall clock, so time-derived behavior is NOT reproducible under `-seed`
-> there. The wasm path (`shellcade-kit check`) is the determinism source of
-> record, and the `kittest` package gives you a virtual clock in unit tests.
+> **Native clock:** pass `-seed` and `r.Now()` becomes a **virtual** clock —
+> it starts at a fixed epoch derived from the seed and advances by exactly one
+> heartbeat per `OnWake` (and at no other moment), so a `-seed` run is
+> reproducible: same seed, same frames. Without `-seed`, `r.Now()` is the real
+> wall clock (handy for feeling out timing live). The wasm path
+> (`shellcade-kit check`) is still the determinism source of record, and the
+> `kittest` package gives you a virtual clock in unit tests.
 
 ## Players, input, and controls
 
@@ -140,6 +146,12 @@ More action-game realities:
   raw `Input` directly and keep `Resolve` for your menus.
 - **Cells are ~2:1 tall.** Circular motion and round collisions need an aspect
   correction (multiply y-velocity/area by ~0.5) or everything looks ovoid.
+- **Double-width glyphs (CJK, many emoji).** `Frame.Text` is one-rune-one-cell,
+  so a wide rune would visually overrun its neighbour. Use `Frame.SetWide(row,
+  col, r, st)` instead: it writes the glyph plus a marked continuation cell so
+  the rune owns both columns. It returns the next free col (`col+2`), and
+  refuses (draws nothing) when the pair can't fit — out of bounds or at the
+  right edge (`col == Cols-1`) — matching `Set`'s drop-on-overflow rule.
 - **Reserved keys:** the local runners reserve `Esc`/`Ctrl-C` (leave) and
   `Ctrl-T` (seat switch); in the arcade, `Esc` is the lobby's Back. Don't bind
   gameplay to them.
@@ -205,6 +217,10 @@ Test it without leaving your terminal: `go run . -seats 3` joins three
 players; **Ctrl-T** switches which seat your keyboard controls, and the view
 follows — so you can play every side of your own game.
 
+The native runner also rides terminal resizes: shrink the window below 80×24
+and it shows a "terminal too small" notice, then repaints your game the moment
+you grow it back — the same letterboxing the arcade does over SSH.
+
 ## The full loop
 
 | Stage | Command | What it proves |
@@ -229,7 +245,7 @@ code, same verdict.
 | `Members/Has/Count` | roster reads | free (local) |
 | `Config` | mode, capacity, seed | free (local) |
 | `Rand` | seeded PRNG | deterministic under `-seed` |
-| `Now` | room clock | wall-clock in the native runner (see caveat) |
+| `Now` | room clock | wall-clock natively, virtual under `-seed` (see Native clock) |
 | `Settled` | has the room ended? | |
 | `Send(p, *Frame)` | one player's view | copies immediately — reuse the frame |
 | `Identical(*Frame)` | same view to everyone | |

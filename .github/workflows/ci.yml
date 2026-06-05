@@ -2,7 +2,18 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  schedule:
+    # Nightly (07:00 UTC): keep the slow release-profile artifact path honest.
+    - cron: "0 7 * * *"
+
+# Pinned shellcade-kit toolchain: the author binary the arcade ships, attached
+# to this repo's matching release. Bump the version AND the linux/amd64 sha
+# (from that release's checksums.txt) together when adopting a new toolchain.
+env:
+  SHELLCADE_KIT_VERSION: "0.5.0"
+  SHELLCADE_KIT_SHA256: "7776561f23bdee1c60b0ee276adb105fcf9cab70d59a6e0a385546af49c14bf8"
 
 jobs:
   test:
@@ -11,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
+      - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
       - name: no private imports (the module must build from ABI.md alone)
@@ -32,4 +44,39 @@ jobs:
         run: |
           cd examples/pokies
           tinygo build -opt=1 -no-debug -gc=leaking -o pokies.wasm -target wasip1 -buildmode=c-shared .
+          ls -la pokies.wasm
+      - name: fetch pinned shellcade-kit (sha256-verified)
+        run: |
+          set -euo pipefail
+          ver="${SHELLCADE_KIT_VERSION}"
+          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
+          base="https://github.com/shellcade/kit/releases/download/v${ver}"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          # Verify against the exact sha we pin, then cross-check the release's
+          # own checksums.txt agrees (defence in depth against a swapped asset).
+          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
+          curl -fsSL -o checksums.txt "${base}/checksums.txt"
+          grep " ${asset}\$" checksums.txt | sha256sum -c -
+          tar -xzf "${asset}" shellcade-kit
+          ./shellcade-kit version
+      - name: shellcade-kit check (the arcade's acceptance gate)
+        run: ./shellcade-kit check examples/pokies/pokies.wasm
+
+  # Slow path: the release profile (-opt=2) that ships. Only nightly and on
+  # tags — it's the artifact authors submit, so keep it building, but don't
+  # pay its cost on every PR.
+  release-wasm:
+    if: github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: acifani/setup-tinygo@v2
+        with: { tinygo-version: "0.41.0" }
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: example builds to wasm (release profile, -opt=2)
+        run: |
+          cd examples/pokies
+          tinygo build -opt=2 -no-debug -gc=leaking -o pokies.wasm -target wasip1 -buildmode=c-shared .
           ls -la pokies.wasm

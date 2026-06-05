@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -21,7 +23,10 @@ import (
 // determinism check that guarantees the two backends behave identically.
 //
 // Flags: -seed N · -heartbeat 50ms · -config k=v (repeatable, v may be @file)
-// · -handle name. Esc or Ctrl-C leaves.
+// · -handle name · -seats N. Esc or Ctrl-C leaves; Ctrl-T switches the active
+// hot-seat. The input path tolerates escape sequences split across reads, paste
+// bursts, and terminal resizes (SIGWINCH re-letterboxes); a terminal smaller
+// than 80x24 shows a "too small" notice and resumes when grown back.
 func Main(g Game) {
 	seed := flag.Int64("seed", 0, "room RNG seed (0 = time-based)")
 	heartbeat := flag.Duration("heartbeat", 50*time.Millisecond, "wake cadence")
@@ -31,8 +36,17 @@ func Main(g Game) {
 	flag.Var(cfgFlag(cfgVals), "config", "KEY=VALUE per-game config (repeatable; value may be @file)")
 	flag.Parse()
 
+	// -seed makes the whole run reproducible: a fixed RNG seed AND a virtual
+	// clock (see below). Distinguish "flag given" from "left at default 0" so a
+	// deliberate -seed 0 still goes deterministic.
+	seedSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "seed" {
+			seedSet = true
+		}
+	})
 	s := *seed
-	if s == 0 {
+	if !seedSet {
 		s = time.Now().UnixNano()
 	}
 	meta := g.Meta()
@@ -59,6 +73,15 @@ func Main(g Game) {
 		kv:      map[string][]byte{},
 		config:  cfgVals,
 	}
+	// Virtual clock: with -seed, the room clock starts at a fixed epoch derived
+	// from the seed and advances by exactly one heartbeat per wake (and never
+	// otherwise) — so a -seed run is bit-for-bit reproducible the way the wasm
+	// determinism check requires. Without -seed, Now() is the wall clock.
+	if seedSet {
+		r.virtual = true
+		r.beat = *heartbeat
+		r.clock = seedEpoch(s)
+	}
 	h := g.NewRoom(cfg, r.Services())
 
 	// Terminal: raw mode, alt screen, hidden cursor.
@@ -74,6 +97,14 @@ func Main(g Game) {
 	}()
 	fmt.Print("\x1b[?1049h\x1b[?25l\x1b[2J")
 
+	// Measure the terminal up front and watch for resizes (SIGWINCH). An
+	// undersized terminal (<80x24) shows a "too small" notice instead of the
+	// game and resumes the moment it grows back.
+	r.measure(fd)
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+
 	h.OnStart(r)
 	for i, p := range players {
 		r.members = players[:i+1]
@@ -81,27 +112,94 @@ func Main(g Game) {
 	}
 	r.members = players
 
-	keys := make(chan Input, 16)
-	done := make(chan struct{})
-	r.seatSwitch = make(chan struct{}, 4)
-	seatSwitches = r.seatSwitch
-	go readKeys(keys, done)
+	// Raw stdin bytes flow on a channel; a stateful parser (devinput.go) turns
+	// them into events, holding partial/ambiguous escape sequences across reads.
+	raw := make(chan []byte, 8)
+	readErr := make(chan struct{})
+	go readRaw(raw, readErr)
+
+	var parser keyParser
+	var evbuf []parsedEvent
+
+	// escTimer fires only while the parser holds an ambiguous bare ESC, so a
+	// lone Escape resolves to "leave" without swallowing a split-read arrow.
+	escTimer := time.NewTimer(escTimeout)
+	if !escTimer.Stop() {
+		<-escTimer.C
+	}
+	escArmed := false
+	armEsc := func() {
+		if parser.Pending() && !escArmed {
+			escTimer.Reset(escTimeout)
+			escArmed = true
+		}
+	}
+	disarmEsc := func() {
+		if escArmed {
+			if !escTimer.Stop() {
+				select {
+				case <-escTimer.C:
+				default:
+				}
+			}
+			escArmed = false
+		}
+	}
+
+	// dispatch applies decoded events; returns false to leave the session.
+	dispatch := func(events []parsedEvent) bool {
+		for _, e := range events {
+			switch e.Kind {
+			case evLeave:
+				return false
+			case evSeatSwitch:
+				r.active = (r.active + 1) % len(players)
+			case evInput:
+				h.OnInput(r, players[r.active], e.Input)
+			}
+		}
+		return true
+	}
 
 	tick := time.NewTicker(*heartbeat)
 	defer tick.Stop()
 	for !r.ended {
 		select {
 		case <-tick.C:
+			if r.virtual {
+				r.clock = r.clock.Add(r.beat) // advance once per wake, nowhere else
+			}
 			h.OnWake(r)
-		case in, ok := <-keys:
+		case buf, ok := <-raw:
 			if !ok {
 				leaveAll(h, r, players)
 				return
 			}
-			h.OnInput(r, players[r.active], in)
-		case <-r.seatSwitch:
-			r.active = (r.active + 1) % len(players)
-		case <-done:
+			disarmEsc()
+			evbuf = parser.Feed(buf, evbuf[:0])
+			if !dispatch(evbuf) {
+				leaveAll(h, r, players)
+				return
+			}
+			armEsc()
+		case <-escTimer.C:
+			escArmed = false
+			evbuf = parser.Timeout(evbuf[:0])
+			if !dispatch(evbuf) {
+				leaveAll(h, r, players)
+				return
+			}
+		case <-winch:
+			r.measure(fd)
+			// Re-letterbox: clear, then repaint. A big-enough terminal repaints
+			// the game via a wake; a too-small one shows the notice directly.
+			fmt.Print("\x1b[2J")
+			if r.tooSmall {
+				r.drawTooSmall()
+			} else {
+				h.OnWake(r)
+			}
+		case <-readErr:
 			leaveAll(h, r, players)
 			return
 		}
@@ -137,75 +235,100 @@ func leaveAll(h Handler, r *nativeRoom, players []Player) {
 	h.OnClose(r)
 }
 
-// readKeys parses raw stdin bytes into Inputs; closes done on Esc/Ctrl-C.
-func readKeys(out chan<- Input, done chan<- struct{}) {
-	buf := make([]byte, 64)
+// readRaw streams raw stdin into the run loop one read at a time. A whole read
+// (a single keystroke, a split escape fragment, or a multi-byte paste burst) is
+// copied and sent; on EOF/error it closes readErr so the loop can leave. The
+// run loop owns parsing (devinput.go), keeping this goroutine I/O-only and
+// drains-without-blocking via the buffered channel.
+func readRaw(out chan<- []byte, readErr chan<- struct{}) {
+	buf := make([]byte, 1024) // generous: absorb paste bursts in one read
 	for {
 		n, err := os.Stdin.Read(buf)
-		if err != nil {
-			close(done)
-			return
+		if n > 0 {
+			out <- append([]byte(nil), buf[:n]...)
 		}
-		i := 0
-		for i < n {
-			b := buf[i]
-			switch {
-			case b == 0x03: // Ctrl-C
-				close(done)
-				return
-			case b == 0x14: // Ctrl-T: next seat
-				seatSwitches <- struct{}{}
-			case b == 0x1b:
-				if i+2 < n && buf[i+1] == '[' {
-					switch buf[i+2] {
-					case 'A':
-						out <- Input{Kind: InputKey, Key: KeyUp}
-					case 'B':
-						out <- Input{Kind: InputKey, Key: KeyDown}
-					case 'C':
-						out <- Input{Kind: InputKey, Key: KeyRight}
-					case 'D':
-						out <- Input{Kind: InputKey, Key: KeyLeft}
-					}
-					i += 3
-					continue
-				}
-				close(done) // bare Esc: leave
-				return
-			case b == '\r' || b == '\n':
-				out <- Input{Kind: InputKey, Key: KeyEnter}
-			case b == 0x7f:
-				out <- Input{Kind: InputKey, Key: KeyBackspace}
-			case b == '\t':
-				out <- Input{Kind: InputKey, Key: KeyTab}
-			case b >= 0x20:
-				out <- Input{Kind: InputRune, Rune: rune(b)}
-			}
-			i++
+		if err != nil {
+			close(readErr)
+			return
 		}
 	}
 }
 
-// seatSwitches carries Ctrl-T presses from the key reader to the run loop.
-var seatSwitches chan<- struct{}
-
 // nativeRoom implements Room directly against the terminal + in-memory state.
 type nativeRoom struct {
-	cfg        RoomConfig
-	members    []Player
-	active     int // hot-seat: which member the keyboard controls / renders
-	seatSwitch chan struct{}
-	rng        *rand.Rand
-	kv         map[string][]byte // keyed by account + key
-	config     map[string]string
-	ended      bool
+	cfg     RoomConfig
+	members []Player
+	active  int // hot-seat: which member the keyboard controls / renders
+	rng     *rand.Rand
+	kv      map[string][]byte // keyed by account + key
+	config  map[string]string
+	ended   bool
+
+	virtual bool          // -seed: Now() reads the virtual clock below
+	clock   time.Time     // virtual room clock; advances one beat per wake
+	beat    time.Duration // heartbeat interval (the per-wake clock step)
+
+	termW, termH int  // last-measured terminal size
+	tooSmall     bool // true while the terminal is below 80x24
+}
+
+// measure refreshes the cached terminal size and the tooSmall flag. A failed
+// query is treated as "big enough" so the game still runs in environments that
+// don't report a size (the worst case is a clipped frame, not a stuck notice).
+func (r *nativeRoom) measure(fd int) {
+	w, h, err := term.GetSize(fd)
+	if err != nil {
+		r.termW, r.termH, r.tooSmall = Cols, Rows, false
+		return
+	}
+	r.termW, r.termH = w, h
+	r.tooSmall = w < Cols || h < Rows
+}
+
+// drawTooSmall paints a centered notice telling the user to grow the terminal.
+// It replaces the game view entirely while undersized; the run loop repaints
+// the game on the next wake once the terminal is large enough again.
+func (r *nativeRoom) drawTooSmall() {
+	msg := fmt.Sprintf("terminal too small %dx%d — need %dx%d", r.termW, r.termH, Cols, Rows)
+	w, h := r.termW, r.termH
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	col := (w - len([]rune(msg))) / 2
+	if col < 0 {
+		col = 0
+	}
+	row := h / 2
+	out := "\x1b[H\x1b[2J" + fmt.Sprintf("\x1b[%d;%dH", row+1, col+1) + msg
+	os.Stdout.WriteString(out)
+}
+
+// seedEpoch derives a fixed virtual-clock start from the run seed, so the same
+// -seed always begins at the same instant. The year-2000 base keeps the value
+// human-readable in logs while staying well clear of the zero time.
+func seedEpoch(seed int64) time.Time {
+	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Spread by seed but keep it bounded and positive (mod a ~year of seconds).
+	off := seed % (365 * 24 * 3600)
+	if off < 0 {
+		off += 365 * 24 * 3600
+	}
+	return base.Add(time.Duration(off) * time.Second)
 }
 
 func (r *nativeRoom) Members() []Player  { return r.members }
 func (r *nativeRoom) Count() int         { return len(r.members) }
 func (r *nativeRoom) Config() RoomConfig { return r.cfg }
 func (r *nativeRoom) Rand() *rand.Rand   { return r.rng }
-func (r *nativeRoom) Now() time.Time     { return time.Now() }
+func (r *nativeRoom) Now() time.Time {
+	if r.virtual {
+		return r.clock
+	}
+	return time.Now()
+}
 func (r *nativeRoom) Settled() bool      { return r.ended }
 
 func (r *nativeRoom) Has(p Player) bool {
@@ -220,6 +343,10 @@ func (r *nativeRoom) Has(p Player) bool {
 func (r *nativeRoom) Send(p Player, f *Frame) {
 	if f == nil || r.active >= len(r.members) || p != r.members[r.active] {
 		return // render only the active seat's view
+	}
+	if r.tooSmall {
+		r.drawTooSmall() // hold the notice; the game repaints once resized
+		return
 	}
 	out := "\x1b[H" + frameToANSI(f)
 	if len(r.members) > 1 {

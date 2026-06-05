@@ -108,6 +108,25 @@ func (f *Frame) SetRune(row, col int, r rune, st Style) {
 	f.Set(row, col, Cell{Rune: r, FG: st.FG, BG: st.BG, Attr: st.Attr})
 }
 
+// SetWide writes a double-width rune: the glyph occupies (row, col) and its
+// continuation cell (row, col+1), which is marked Cont=true so the renderer
+// skips it (the wide glyph already covers both columns). CJK, many emoji, and
+// box-drawing pairs need this.
+//
+// Edge handling follows Set's drop-on-overflow philosophy: a wide glyph has no
+// room when col is out of bounds OR the continuation cell would fall off the
+// right edge (col == Cols-1). In that case the whole write is REFUSED (nothing
+// is drawn) — a half-glyph would desync every column to its right. Returns the
+// next free column (col+2), or col unchanged when the write was refused.
+func (f *Frame) SetWide(row, col int, r rune, st Style) int {
+	if !inBounds(row, col) || col+1 >= Cols {
+		return col
+	}
+	f.Cells[row][col] = Cell{Rune: r, FG: st.FG, BG: st.BG, Attr: st.Attr}
+	f.Cells[row][col+1] = Cell{FG: st.FG, BG: st.BG, Attr: st.Attr, Cont: true}
+	return col + 2
+}
+
 // Text writes a string left-to-right, clamped to the row. Returns the next col.
 func (f *Frame) Text(row, col int, s string, st Style) int {
 	for _, r := range s {
