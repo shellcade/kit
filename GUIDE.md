@@ -228,7 +228,7 @@ terminal rate. For hold-to-thrust/fire semantics, use the `keyhold` package,
 which derives held state from repeat timing:
 
 ```go
-import "github.com/shellcade/kit/keyhold"
+import "github.com/shellcade/kit/v2/keyhold"
 
 rm.keys = keyhold.New(0)                          // in NewRoom
 rm.keys.Observe(in, r.Now())                      // in OnInput
@@ -255,6 +255,44 @@ More action-game realities:
 - **Reserved keys:** the local runners reserve `Esc`/`Ctrl-C` (leave) and
   `Ctrl-T` (seat switch); in the arcade, `Esc` is the lobby's Back. Don't bind
   gameplay to them.
+
+## Grapheme glyphs (emoji with modifiers)
+
+Some emoji are a single visible glyph built from **several** Unicode code
+points: a heart plus a VS16 variation selector (`❤️` = `❤` + U+FE0F), a thumbs-up
+plus a skin-tone modifier (`👍🏽`), a keycap (`1️⃣` = `1` + U+FE0F + U+20E3). A cell
+holds **up to three** code points for exactly this, and you write one with
+`SetGrapheme`:
+
+```go
+f.SetGrapheme(row, col, "❤️", st)   // heart + VS16, one cell, width 1
+f.SetGrapheme(row, col, "1️⃣", st)   // keycap: '1' + VS16 + U+20E3
+w := f.SetGraphemeWide(row, col, "👍🏽", st) // a width-2 grapheme; w == col+2
+```
+
+- `SetGrapheme(row, col, cluster, st) int` writes the cluster into one cell
+  (base → first code point, then the extras) and returns the next column
+  (`col+1`). `SetGraphemeWide(...)` is the width-2 companion — it marks a
+  continuation cell at `col+1` and returns `col+2`, mirroring `SetWide`, and
+  refuses (draws nothing) at the right edge rather than drawing a half-glyph.
+- **Three code points is the ceiling.** A cluster that decodes to **more than
+  three** code points — a family ZWJ emoji like `👨‍👩‍👧` (man + ZWJ + woman + ZWJ
+  + girl, five code points) — is **unsupported**. `SetGrapheme` **refuses** it:
+  it draws nothing and returns `col` unchanged. Refusal (not truncation) is
+  deliberate — truncating to three code points would render a *different,
+  valid-looking* glyph (a lone person instead of a family), a worse surprise
+  than a blank.
+- **Width is your contract, and your risk.** The SDK never measures display
+  width — it does not pull a Unicode width table into your wasm artifact.
+  Declaring width via `SetGraphemeWide` is the same author's-contract /
+  author's-risk deal as `SetWide` today: **viewer terminals disagree** on how
+  wide an emoji sequence (ZWJ, VS16, skin-tone, keycap) actually renders, so
+  test on the terminals you care about and lay out defensively. A wrong width
+  guess shifts everything to its right on terminals that disagree.
+- **Ordinary text is unchanged.** `SetRune`, `Set`, `Text`, and `SetWide` are
+  exactly as before — single-code-point writers that leave the extra slots
+  empty. You only reach for `SetGrapheme` when you specifically want a
+  multi-code-point emoji.
 
 ## Scores and leaderboards
 
@@ -356,7 +394,7 @@ code, same verdict.
 | `Log(msg)` | host-side room log | visible in `shellcade-kit play` stderr |
 | `Services()` | KV / config / accounts | see Durable state |
 
-For unit tests, `github.com/shellcade/kit/kittest` is an in-memory `Room` +
+For unit tests, `github.com/shellcade/kit/v2/kittest` is an in-memory `Room` +
 `Services` with a virtual clock, seeded RNG, and recorded
 frames/posts/settles — drive your `Handler` directly and assert.
 
