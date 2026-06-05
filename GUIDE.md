@@ -69,8 +69,11 @@ Three rules shape everything:
 ## Time, the wake way
 
 Everything the standard library's timers would do becomes a comparison
-against `r.Now()` inside `OnWake`. The three idioms (all live in
-[examples/pokies](examples/pokies)):
+against `r.Now()` inside `OnWake`. The idioms below all live in
+[examples/pokies](examples/pokies) — its
+[README](examples/pokies/README.md) is the line-referenced cookbook
+(one-shots, staggered schedules, derived animation clocks, turn timeouts, and
+a "how do I port a timer?" table):
 
 ```go
 // One-shot (was: time.AfterFunc) — store a deadline, check it on wake.
