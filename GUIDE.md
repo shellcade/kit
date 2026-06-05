@@ -214,6 +214,10 @@ Test it without leaving your terminal: `go run . -seats 3` joins three
 players; **Ctrl-T** switches which seat your keyboard controls, and the view
 follows — so you can play every side of your own game.
 
+The native runner also rides terminal resizes: shrink the window below 80×24
+and it shows a "terminal too small" notice, then repaints your game the moment
+you grow it back — the same letterboxing the arcade does over SSH.
+
 ## The full loop
 
 | Stage | Command | What it proves |
