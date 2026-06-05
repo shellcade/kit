@@ -3,6 +3,7 @@
 package game
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,5 +53,22 @@ func TestWallClockWithoutSeed(t *testing.T) {
 	after := time.Now()
 	if got.Before(before) || got.After(after) {
 		t.Fatalf("wall-clock Now() %v outside [%v, %v]", got, before, after)
+	}
+}
+
+func TestFrameToANSIBurstsGraphemeContiguously(t *testing.T) {
+	f := NewFrame()
+	f.SetGrapheme(0, 0, "1️⃣", Style{}) // '1' + VS16 + keycap U+20E3
+	out := frameToANSI(f)
+	want := "1️⃣" // base, cp2, cp3 contiguous
+	if !strings.Contains(out, want) {
+		t.Fatalf("grapheme not burst contiguously; row0 render lacks %q", want)
+	}
+	// A wide grapheme bursts base+cp2 contiguously and the Cont cell emits
+	// nothing extra for its position.
+	g := NewFrame()
+	g.SetGraphemeWide(0, 0, "❤️", Style{})
+	if !strings.Contains(frameToANSI(g), "❤️") {
+		t.Fatal("wide grapheme lead not burst contiguously")
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	kit "github.com/shellcade/kit"
+	kit "github.com/shellcade/kit/v2"
 )
 
 func TestHeldBridgesRepeatGaps(t *testing.T) {

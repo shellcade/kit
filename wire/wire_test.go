@@ -57,10 +57,15 @@ func TestMetaRejectsEmptySlug(t *testing.T) {
 
 func TestCellRoundTrip(t *testing.T) {
 	buf := make([]byte, FrameBytes)
-	in := Cell{Rune: '╭', FGSet: true, FGR: 1, FGG: 2, FGB: 3, BGSet: true, BGR: 4, BGG: 5, BGB: 6, Attr: 0b1010, Cont: true}
+	in := Cell{Rune: '╭', Cp2: 0xFE0F, Cp3: 0x20E3, FGSet: true, FGR: 1, FGG: 2, FGB: 3, BGSet: true, BGR: 4, BGG: 5, BGB: 6, Attr: 0b1010, Cont: true}
 	PutCell(buf, 1234, in)
 	if out := GetCell(buf, 1234); out != in {
 		t.Fatalf("cell mismatch: in=%+v out=%+v", in, out)
+	}
+	// Canonical-zero: pad bytes @22..23 are always zero.
+	o := 1234 * CellBytes
+	if buf[o+22] != 0 || buf[o+23] != 0 {
+		t.Fatalf("pad not canonical zero: %d %d", buf[o+22], buf[o+23])
 	}
 	// neighbors untouched
 	if out := GetCell(buf, 1233); out != (Cell{}) {

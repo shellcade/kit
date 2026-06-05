@@ -10,7 +10,7 @@
 // internal so the public surface stays deliberate and versionable.
 package kit
 
-import "github.com/shellcade/kit/internal/game"
+import "github.com/shellcade/kit/v2/internal/game"
 
 // ABIVersion is the ABI major version this SDK targets.
 const ABIVersion = game.ABIVersion
@@ -155,3 +155,10 @@ type (
 
 // (Frame).Clear resets a frame for reuse — prefer one long-lived frame plus
 // Clear() per render over NewFrame() per render (allocation-free steady state).
+//
+// Frame authoring methods (on *Frame, surfaced via the type alias above):
+// Set/SetRune/Text/SetWide/Fill are unchanged single-code-point writers, and
+// v2 adds (*Frame).SetGrapheme(row, col, cluster, style) and the width-2
+// (*Frame).SetGraphemeWide(...) for clusters of up to three code points (VS16,
+// skin-tone, keycap). Both refuse a >3- or 0-code-point cluster by drawing
+// nothing (see GUIDE.md "Grapheme glyphs").

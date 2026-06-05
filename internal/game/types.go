@@ -1,5 +1,5 @@
 // Package kit is the shellcade guest SDK: the authoring surface for wasm
-// games targeting shellcade ABI v1. It is implemented purely from the ABI
+// games targeting shellcade ABI v2. It is implemented purely from the ABI
 // contract — it imports no shellcade private code — and mirrors the native
 // sdk package's value types so a native game ports mechanically.
 //
@@ -8,7 +8,7 @@
 package game
 
 // ABIVersion is the ABI major version this SDK targets.
-const ABIVersion uint32 = 1
+const ABIVersion uint32 = 2
 
 // Kind distinguishes a keyless guest from a member account.
 type Kind uint8
@@ -66,6 +66,21 @@ type Input struct {
 	Kind InputKind
 	Rune rune
 	Key  Key
+}
+
+// knownInput reports whether an input's kind (and, for a named key, its key
+// value) is one this SDK version understands. The v2 tolerant-reader rule
+// requires unknown kind/key values to be ignored rather than faulting — future
+// input growth (mouse, paste, focus, new named keys) is then an additive minor.
+func knownInput(in Input) bool {
+	switch in.Kind {
+	case InputRune:
+		return true
+	case InputKey:
+		return in.Key <= KeyCtrlC // KeyNone..KeyCtrlC are the assigned keys
+	default:
+		return false
+	}
 }
 
 // Mode is the matchmaking + timing classifier.

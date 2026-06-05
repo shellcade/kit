@@ -42,23 +42,57 @@ func (r *room) index(p Player) int {
 	return -1
 }
 
+// Send ships a per-player frame as a v2 delta container (D4/D9). It packs the
+// frame once (encodeFrame enforces canonical-zero), builds a delta against the
+// slot's baseline — or a keyframe when the slot is not present (first send,
+// rejection, roster change) or the delta meets/exceeds the budget — sends it,
+// and mirrors the host-returned epoch: if the host rejected (returned a
+// different epoch) the slot is left not-present so the next send is a keyframe;
+// on accept the baseline is updated and stamped with the returned epoch.
 func (r *room) Send(p Player, f *Frame) {
 	idx := r.index(p)
-	if idx < 0 || f == nil {
+	if idx < 0 || f == nil || idx >= rosterCap {
 		return
 	}
-	m := alloc(encodeFrame(f))
-	hostSend(uint64(idx), m.Offset())
+	packed := encodeFrame(f)
+	sentEpoch := baselineEpoch[idx]
+	payload := buildSendPayload(idx, packed)
+	m := alloc(payload)
+	returned := uint32(hostSend(uint64(idx), m.Offset()))
 	m.Free()
+	if returned != sentEpoch && baselinePresent[idx] {
+		// Host rejected the delta (epoch superseded): force a keyframe next send.
+		baselinePresent[idx] = false
+		baselineEpoch[idx] = returned
+		return
+	}
+	commitBaseline(idx, packed, returned)
 }
 
+// Identical broadcasts one frame to every player. It diffs against the broadcast
+// baseline; on accept it reconciles EVERY per-index baseline (copy the frame in,
+// stamp the returned epoch) so a later per-player Send diffs against the correct
+// baseline (D7). A keyframe is sent when the broadcast slot is not present.
 func (r *room) Identical(f *Frame) {
 	if f == nil {
 		return
 	}
-	m := alloc(encodeFrame(f))
-	hostIdentical(m.Offset())
+	packed := encodeFrame(f)
+	sentEpoch := baselineEpoch[broadcastSlot]
+	payload := buildSendPayload(broadcastSlot, packed)
+	m := alloc(payload)
+	returned := uint32(hostIdentical(m.Offset()))
 	m.Free()
+	if returned != sentEpoch && baselinePresent[broadcastSlot] {
+		baselinePresent[broadcastSlot] = false
+		baselineEpoch[broadcastSlot] = returned
+		return
+	}
+	// Reconcile the broadcast slot and EVERY per-index baseline.
+	commitBaseline(broadcastSlot, packed, returned)
+	for i := 0; i < rosterCap; i++ {
+		commitBaseline(i, packed, returned)
+	}
 }
 
 func (r *room) SetInputContext(ctx InputContext) { hostSetInputContext(uint64(ctx)) }
