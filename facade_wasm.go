@@ -2,7 +2,7 @@
 
 package kit
 
-import "github.com/shellcade/kit/internal/game"
+import "github.com/shellcade/kit/v2/internal/game"
 
 // Run registers the game for the wasm build; Main is the dual-target
 // entrypoint (under wasm it just registers — the trampolines do the rest).

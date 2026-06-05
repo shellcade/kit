@@ -31,7 +31,7 @@ package keyhold
 import (
 	"time"
 
-	kit "github.com/shellcade/kit"
+	kit "github.com/shellcade/kit/v2"
 )
 
 // DefaultLinger comfortably exceeds common terminal initial-repeat delays.

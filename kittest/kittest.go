@@ -21,7 +21,7 @@ import (
 	"math/rand"
 	"time"
 
-	kit "github.com/shellcade/kit"
+	kit "github.com/shellcade/kit/v2"
 )
 
 // Player builds a member Player with conventional fields from an id.

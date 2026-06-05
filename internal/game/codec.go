@@ -1,6 +1,6 @@
 package game
 
-import "github.com/shellcade/kit/wire"
+import "github.com/shellcade/kit/v2/wire"
 
 // The guest side of the ABI codecs: thin mappings between wire types (the
 // canonical encodings owned by gamekit/wire) and the authoring types.

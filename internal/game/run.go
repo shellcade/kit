@@ -5,7 +5,7 @@ package game
 import (
 	"math/rand"
 
-	"github.com/shellcade/kit/wire"
+	"github.com/shellcade/kit/v2/wire"
 )
 
 // Run registers the game with the export trampolines. Call it from an init()

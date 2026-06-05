@@ -10,7 +10,7 @@
 // internal so the public surface stays deliberate and versionable.
 package kit
 
-import "github.com/shellcade/kit/internal/game"
+import "github.com/shellcade/kit/v2/internal/game"
 
 // ABIVersion is the ABI major version this SDK targets.
 const ABIVersion = game.ABIVersion

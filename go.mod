@@ -1,4 +1,4 @@
-module github.com/shellcade/kit
+module github.com/shellcade/kit/v2
 
 go 1.25.0
 
