@@ -143,6 +143,12 @@ More action-game realities:
   raw `Input` directly and keep `Resolve` for your menus.
 - **Cells are ~2:1 tall.** Circular motion and round collisions need an aspect
   correction (multiply y-velocity/area by ~0.5) or everything looks ovoid.
+- **Double-width glyphs (CJK, many emoji).** `Frame.Text` is one-rune-one-cell,
+  so a wide rune would visually overrun its neighbour. Use `Frame.SetWide(row,
+  col, r, st)` instead: it writes the glyph plus a marked continuation cell so
+  the rune owns both columns. It returns the next free col (`col+2`), and
+  refuses (draws nothing) when the pair can't fit — out of bounds or at the
+  right edge (`col == Cols-1`) — matching `Set`'s drop-on-overflow rule.
 - **Reserved keys:** the local runners reserve `Esc`/`Ctrl-C` (leave) and
   `Ctrl-T` (seat switch); in the arcade, `Esc` is the lobby's Back. Don't bind
   gameplay to them.
