@@ -3,11 +3,11 @@ package diffbench
 import "encoding/binary"
 
 // The encoders below all operate on the PACKED wire representation of a frame
-// (FrameBytes == 30720): prev and next are packed frames, dst is a reused
-// scratch buffer the encoder writes the wire payload into, and the return value
-// is the number of payload bytes produced. None of them allocate (dst is
-// caller-owned and sized once), matching the SDK's allocation-free steady-state
-// requirement under TinyGo's leaking GC.
+// (FrameBytes == 46080, v2 24-byte cells): prev and next are packed frames, dst
+// is a reused scratch buffer the encoder writes the wire payload into, and the
+// return value is the number of payload bytes produced. None of them allocate
+// (dst is caller-owned and sized once), matching the SDK's allocation-free
+// steady-state requirement under TinyGo's leaking GC.
 //
 // A cap big enough for any encoder's worst case (a full-change frame) is
 // FrameBytes + a small framing overhead; bench buffers are sized to MaxEncoded.
@@ -21,7 +21,7 @@ const MaxEncoded = FrameBytes + FrameCells*2 + 8 // generous: worst-case cell-li
 const DeltaHeaderBytes = 9
 
 // RunHeaderBytes is the per-run prefix inside a run-list payload: u16 startIndex
-// + u16 runLen, followed by runLen*16 packed cells.
+// + u16 runLen, followed by runLen*24 packed cells.
 const RunHeaderBytes = 4
 
 // flagKeyframe is header flags bit0: the payload is a self-contained keyframe
@@ -30,10 +30,10 @@ const flagKeyframe = 0x01
 
 // KeyframeBytes is the worst-case fallback size: the keyframe form is the
 // 9-byte header (bit0 set) + ONE run covering all 1920 cells (u16 start=0,
-// u16 len=1920) + the full 30720-byte packed grid = 30733 B. This is the v2
+// u16 len=1920) + the full 46080-byte packed grid = 46093 B. This is the v2
 // worst case (the round-1 "RUN+FULL fallback" 1-byte tag is obsolete: in v2 the
 // container IS the frame path and the keyframe form is the bootstrap/fallback).
-const KeyframeBytes = DeltaHeaderBytes + RunHeaderBytes + FrameBytes // 30733
+const KeyframeBytes = DeltaHeaderBytes + RunHeaderBytes + FrameBytes // 46093
 
 // putDeltaHeader writes the normative 9-byte container header into dst[0:9].
 // epoch is modeled as 0 here (the byte COUNT is epoch-independent; the host is
@@ -49,17 +49,20 @@ func putDeltaHeader(dst []byte, keyframe bool, runCount int) {
 	binary.LittleEndian.PutUint16(dst[7:], 0)             // u16 reserved = 0
 }
 
-// cellEqual reports whether the 16-byte cell at offset o is identical in a and b.
+// cellEqual reports whether the 24-byte cell at offset o is identical in a and b.
+// Under the canonical-zero rule (unused cp slots and pad are always zero), cell
+// equality IS a 24-byte memcmp; this is the dirty scan's hot inner check, done
+// as THREE uint64 loads (the packed cell is exactly 24 bytes and 8-byte aligned
+// within the frame, o being a multiple of 24).
 func cellEqual(a, b []byte, o int) bool {
-	// Compare as two uint64 loads: the packed cell is exactly 16 bytes and
-	// 8-byte aligned within the frame (o is a multiple of 16).
 	return binary.LittleEndian.Uint64(a[o:]) == binary.LittleEndian.Uint64(b[o:]) &&
-		binary.LittleEndian.Uint64(a[o+8:]) == binary.LittleEndian.Uint64(b[o+8:])
+		binary.LittleEndian.Uint64(a[o+8:]) == binary.LittleEndian.Uint64(b[o+8:]) &&
+		binary.LittleEndian.Uint64(a[o+16:]) == binary.LittleEndian.Uint64(b[o+16:])
 }
 
 // ---- (baseline) FULL ------------------------------------------------------
 
-// encodeFull is the current baseline's WIRE FLOOR: ship the entire 30720-byte
+// encodeFull is the current baseline's WIRE FLOOR: ship the entire 46080-byte
 // packed frame. Modeled as the copy into the send buffer — the minimum any
 // full-frame ship must pay to hand the host a contiguous payload once the
 // packed bytes already exist.
@@ -82,24 +85,26 @@ func encodeFullPack(_ /*prev*/, next, dst []byte) int {
 	return FrameBytes
 }
 
-// repackCell rebuilds the 16 packed bytes of one cell at offset o from src into
-// dst, doing the same field-by-field work PutCell does (so the modeled compose
-// cost matches the real codec, not a memcpy).
+// repackCell rebuilds the 24 packed bytes of one v2 grapheme cell at offset o
+// from src into dst, doing the same field-by-field work the v2 PutCell does (so
+// the modeled compose cost matches the real codec, not a memcpy): three u32 code
+// points (rune + cp2 + cp3), fg/bg quads, attr, cont, and the zero pad.
 func repackCell(src, dst []byte, o int) {
-	r := binary.LittleEndian.Uint32(src[o:])
-	binary.LittleEndian.PutUint32(dst[o:], r)
-	dst[o+4], dst[o+5], dst[o+6], dst[o+7] = src[o+4], src[o+5], src[o+6], src[o+7]
-	dst[o+8], dst[o+9], dst[o+10], dst[o+11] = src[o+8], src[o+9], src[o+10], src[o+11]
-	dst[o+12] = src[o+12]
-	dst[o+13] = src[o+13]
-	dst[o+14], dst[o+15] = 0, 0
+	binary.LittleEndian.PutUint32(dst[o:], binary.LittleEndian.Uint32(src[o:]))     // rune
+	binary.LittleEndian.PutUint32(dst[o+4:], binary.LittleEndian.Uint32(src[o+4:])) // cp2
+	binary.LittleEndian.PutUint32(dst[o+8:], binary.LittleEndian.Uint32(src[o+8:])) // cp3
+	dst[o+12], dst[o+13], dst[o+14], dst[o+15] = src[o+12], src[o+13], src[o+14], src[o+15] // fg
+	dst[o+16], dst[o+17], dst[o+18], dst[o+19] = src[o+16], src[o+17], src[o+18], src[o+19] // bg
+	dst[o+20] = src[o+20] // attr
+	dst[o+21] = src[o+21] // cont
+	dst[o+22], dst[o+23] = 0, 0 // pad (canonical zero)
 }
 
 // ---- (a) CELL-LIST --------------------------------------------------------
 
 // encodeCellList emits, per changed cell, a u16 cell index followed by the
-// 16-byte packed cell: 18 bytes/changed-cell, plus a u16 count header.
-// Layout: u16 count, then count * (u16 index + 16 bytes).
+// 24-byte packed cell: 26 bytes/changed-cell, plus a u16 count header.
+// Layout: u16 count, then count * (u16 index + 24 bytes).
 func encodeCellList(prev, next, dst []byte) int {
 	p := 2 // reserve the count header
 	n := 0
@@ -121,9 +126,9 @@ func encodeCellList(prev, next, dst []byte) int {
 // ---- (b) DIRTY-ROWS -------------------------------------------------------
 
 // encodeDirtyRows emits a 24-bit row bitmap (3 bytes; one bit per row, padded
-// in a u32 for alignment-free decode) followed by the full 1280-byte packed row
+// in a u32 for alignment-free decode) followed by the full 1920-byte packed row
 // for each dirty row. A row is dirty if any of its 80 cells changed.
-// Layout: u32 rowBitmap (low 24 bits used), then (popcount) * 1280 bytes.
+// Layout: u32 rowBitmap (low 24 bits used), then (popcount) * 1920 bytes.
 func encodeDirtyRows(prev, next, dst []byte) int {
 	var mask uint32
 	p := 4 // reserve the bitmap
@@ -152,11 +157,11 @@ func encodeDirtyRows(prev, next, dst []byte) int {
 // encodeRunList coalesces changed cells into runs of CONSECUTIVE changed cells.
 // This is the v2 normative delta container: the 9-byte header (u8 flags,
 // u32 epoch, u16 runCount, u16 reserved) followed by runCount runs, each
-// {u16 startIndex, u16 runLen, runLen*16 packed cells}. It amortizes the
+// {u16 startIndex, u16 runLen, runLen*24 packed cells}. It amortizes the
 // per-cell index overhead of CELL-LIST across each contiguous span (a changed
-// word, a row segment), at 4 bytes/run + 16 bytes/cell. A runCount==0 payload
+// word, a row segment), at 4 bytes/run + 24 bytes/cell. A runCount==0 payload
 // (the 9-byte header alone) is the legal "no change" delta.
-// Layout: [9-byte header] then runCount * (u16 start + u16 len + len*16 bytes).
+// Layout: [9-byte header] then runCount * (u16 start + u16 len + len*24 bytes).
 func encodeRunList(prev, next, dst []byte) int {
 	p := DeltaHeaderBytes // reserve the container header
 	runs := 0
@@ -188,7 +193,7 @@ func encodeRunList(prev, next, dst []byte) int {
 // encodeSkipIdentical is the degenerate compare-only encoding: if next equals
 // prev, ship NOTHING (return 0 — the guest skips the send/identical host call
 // entirely); otherwise fall back to the full frame. This measures the pure
-// equality-compare cost (a ~30KB packed-frame memcmp) — the price of detecting
+// equality-compare cost (a ~46KB packed-frame memcmp) — the price of detecting
 // "nothing changed", which is the single most common transition for static and
 // turn-based games whose render-on-change still re-emits identical frames on
 // stray wakes.
@@ -213,9 +218,9 @@ func framesEqual(a, b []byte) bool {
 
 // encodeKeyframe emits the v2 KEYFRAME FORM: the 9-byte container header with
 // flags bit0 set + exactly ONE run covering all 1920 cells (u16 start=0,
-// u16 len=1920) + the full 30720-byte packed grid. This is the bootstrap /
+// u16 len=1920) + the full 46080-byte packed grid. This is the bootstrap /
 // full-frame mechanism of the v2 container and the worst-case fallback
-// (KeyframeBytes = 30733). The round-1 "RUN+FULL fallback" 1-byte tag is gone:
+// (KeyframeBytes = 46093). The round-1 "RUN+FULL fallback" 1-byte tag is gone:
 // in v2 the delta container IS the frame path, and the keyframe is its
 // self-contained full-frame member (accepted by the host regardless of epoch).
 func encodeKeyframe(_ /*prev*/, next, dst []byte) int {
@@ -230,7 +235,7 @@ func encodeKeyframe(_ /*prev*/, next, dst []byte) int {
 
 // encodeRunListOrKeyframe is RUN-LIST with the v2 safety valve: if the delta
 // payload would meet or exceed the keyframe form's size, ship the keyframe form
-// instead. This caps the worst case at KeyframeBytes (30733) and is exactly the
+// instead. This caps the worst case at KeyframeBytes (46093) and is exactly the
 // encoding a production guest ships — the run-list delta in the steady state,
 // degrading to a self-contained keyframe on the full-change cliff. It is
 // benchmarked to show the cliff is bounded.

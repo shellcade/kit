@@ -110,7 +110,8 @@ func BenchmarkEncode(b *testing.B) {
 // --- summary report ----------------------------------------------------------
 
 // TestReport prints a dense scenario x encoding table (mean B/send, % of the
-// 30720 baseline) plus the average changed-cell density per scenario. Run with:
+// 46080 v2 full-frame baseline) plus the average changed-cell density per
+// scenario. Run with:
 //
 //	go test -run TestReport -v ./internal/diffbench/
 func TestReport(t *testing.T) {
