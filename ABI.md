@@ -72,7 +72,7 @@ means not-found.
 | `post` | (ptr result) | record a leaderboard result without ending |
 | `log` | (i64 level, ptr msg) | 0 debug · 1 info · 2 warn · 3 error |
 | `kv_get` | (i64 playerIdx, ptr key) → ptr | per-user durable KV read |
-| `kv_set` | (i64 playerIdx, ptr key, ptr val, ptr rule) | rule: `keep-winner` `keep-loser` `sum` `max` |
+| `kv_set` | (i64 playerIdx, ptr key, ptr val, ptr rule) | rule: `keep-winner` `keep-loser` `sum` `max`; for `sum`/`max` the value MUST be a base-10 ASCII int64 (unparsable values degrade to keep-winner at merge time) |
 | `kv_delete` | (i64 playerIdx, ptr key) | |
 | `config_get` | (ptr key) → ptr | read-only per-game config |
 | `profile_get` | (i64 playerIdx) → ptr | lifetime stats (reserved; may return 0) |

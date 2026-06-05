@@ -1,5 +1,20 @@
 # kit
 
+## 0.4.0 — playtest feedback round 1 (asteroids)
+
+- **keyhold** package: held-key state derived from terminal auto-repeat —
+  hold-to-thrust/fire for action games (terminals have no key-up; see GUIDE).
+- **kittest** package: in-memory Room/Services test double (virtual clock,
+  seeded RNG, recorded frames/posts) for unit-testing game logic.
+- **Frame.Clear()**: reuse one frame per render — allocation-free steady state.
+- pokies example now **Posts** peak scores: the worked answer to "how does my
+  score reach the leaderboard" (Post/End feed boards; KV never does).
+- GUIDE: action-games section (held keys, raw input, ~2:1 cell aspect,
+  reserved keys), scores & leaderboards (End vs Post semantics), full Room
+  reference table, frame-reuse idiom, native wall-clock determinism caveat,
+  TinyGo-is-the-artifact-toolchain note. ABI.md: sum/max values are base-10
+  ASCII int64.
+
 ## 0.3.1
 
 - `kit new` scaffolds pin the CLI's own module version (via build info), fixing

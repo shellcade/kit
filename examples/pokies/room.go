@@ -54,6 +54,7 @@ type machine struct {
 	spin       *spinState
 	flash      string
 	flashUntil time.Time
+	postedPeak int // last peak posted to the leaderboard (post only on increase)
 }
 
 type ticker struct {
@@ -339,6 +340,16 @@ func (rm *room) settleSpin(r kit.Room, id string) {
 	rm.clampBet(m)
 	if p, ok := rm.names[id]; ok {
 		rm.persistWallet(r, p, m.balance, m.highScore)
+		// Leaderboard: Post feeds the board declared in GameMeta.Leaderboard
+		// (Credits, higher-better, best-result). Post on a new personal peak —
+		// the board keeps each account's best posted Metric. This is THE way a
+		// score reaches the board; KV is durable state, not the leaderboard.
+		if m.highScore > m.postedPeak {
+			m.postedPeak = m.highScore
+			r.Post(kit.Result{Rankings: []kit.PlayerResult{{
+				Player: p, Metric: m.highScore, Status: kit.StatusFinished,
+			}}})
+		}
 	}
 }
 

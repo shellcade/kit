@@ -152,3 +152,6 @@ type (
 	AccountStore = game.AccountStore
 	ConfigStore  = game.ConfigStore
 )
+
+// (Frame).Clear resets a frame for reuse — prefer one long-lived frame plus
+// Clear() per render over NewFrame() per render (allocation-free steady state).

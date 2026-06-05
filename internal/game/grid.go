@@ -81,6 +81,18 @@ func NewFrame() *Frame {
 	return f
 }
 
+// Clear resets every cell to a blank (space, default colors), so one Frame
+// can be reused across renders — the allocation-free steady state the SDK
+// recommends (a fresh NewFrame per render is ~46KB of churn).
+func (f *Frame) Clear() {
+	blank := Cell{Rune: ' '}
+	for r := 0; r < Rows; r++ {
+		for c := 0; c < Cols; c++ {
+			f.Cells[r][c] = blank
+		}
+	}
+}
+
 func inBounds(row, col int) bool { return row >= 0 && row < Rows && col >= 0 && col < Cols }
 
 // Set writes one cell; out-of-bounds writes are clamped (dropped).
