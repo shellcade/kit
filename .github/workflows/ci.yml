@@ -12,8 +12,8 @@ on:
 # to this repo's matching release. Bump the version AND the linux/amd64 sha
 # (from that release's checksums.txt) together when adopting a new toolchain.
 env:
-  SHELLCADE_KIT_VERSION: "0.5.0"
-  SHELLCADE_KIT_SHA256: "7776561f23bdee1c60b0ee276adb105fcf9cab70d59a6e0a385546af49c14bf8"
+  SHELLCADE_KIT_VERSION: "0.6.0"
+  SHELLCADE_KIT_SHA256: "85683abf8db746f565ea7d3f42d007fcb38fdb2ad0a99289efbb319829e95b85"
 
 jobs:
   test:
@@ -28,23 +28,21 @@ jobs:
       - name: no private imports (the module must build from ABI.md alone)
         run: |
           ! grep -rn "shellcade/shellcade" --include="*.go" . || (echo "FORBIDDEN private import" && exit 1)
-      - name: native example builds
-        run: go build ./examples/pokies
 
+  # Author journey: prove the experience an author actually has — scaffold a
+  # fresh game with the pinned shellcade-kit, build the dev-profile wasm, and
+  # run the arcade's acceptance check on it. The scaffold pins a kit version, so
+  # we replace it with the PR's checkout to gate THIS repo's code, not a release.
   wasm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { path: kit }
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@v2
         with: { tinygo-version: "0.41.0" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
-      - name: example builds to wasm (dev profile)
-        run: |
-          cd examples/pokies
-          tinygo build -opt=1 -no-debug -gc=leaking -o pokies.wasm -target wasip1 -buildmode=c-shared .
-          ls -la pokies.wasm
       - name: fetch pinned shellcade-kit (sha256-verified)
         run: |
           set -euo pipefail
@@ -58,25 +56,58 @@ jobs:
           curl -fsSL -o checksums.txt "${base}/checksums.txt"
           grep " ${asset}\$" checksums.txt | sha256sum -c -
           tar -xzf "${asset}" shellcade-kit
-          ./shellcade-kit version
-      - name: shellcade-kit check (the arcade's acceptance gate)
-        run: ./shellcade-kit check examples/pokies/pokies.wasm
+          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+          shellcade-kit version
+      - name: scaffold a fresh game
+        run: shellcade-kit new cigame
+      - name: build against this PR's kit (dev profile) and check
+        run: |
+          set -euo pipefail
+          cd cigame
+          # The scaffold pins a released kit; point it at the PR's checkout so
+          # the gate exercises THIS repo's SDK, then tidy and build.
+          go mod edit -replace github.com/shellcade/kit=../kit
+          go mod tidy
+          go build ./...
+          tinygo build -opt=1 -no-debug -gc=leaking -o cigame.wasm \
+              -target wasip1 -buildmode=c-shared .
+          ls -la cigame.wasm
+          shellcade-kit check cigame.wasm
 
   # Slow path: the release profile (-opt=2) that ships. Only nightly and on
   # tags — it's the artifact authors submit, so keep it building, but don't
-  # pay its cost on every PR.
+  # pay its cost on every PR. Mirrors the author journey, release build.
   release-wasm:
     if: github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { path: kit }
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@v2
         with: { tinygo-version: "0.41.0" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
-      - name: example builds to wasm (release profile, -opt=2)
+      - name: fetch pinned shellcade-kit (sha256-verified)
         run: |
-          cd examples/pokies
-          tinygo build -opt=2 -no-debug -gc=leaking -o pokies.wasm -target wasip1 -buildmode=c-shared .
-          ls -la pokies.wasm
+          set -euo pipefail
+          ver="${SHELLCADE_KIT_VERSION}"
+          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
+          base="https://github.com/shellcade/kit/releases/download/v${ver}"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
+          curl -fsSL -o checksums.txt "${base}/checksums.txt"
+          grep " ${asset}\$" checksums.txt | sha256sum -c -
+          tar -xzf "${asset}" shellcade-kit
+          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+      - name: scaffold and release-build (-opt=2) against this PR's kit
+        run: |
+          set -euo pipefail
+          shellcade-kit new cigame
+          cd cigame
+          go mod edit -replace github.com/shellcade/kit=../kit
+          go mod tidy
+          tinygo build -opt=2 -no-debug -gc=leaking -o cigame.wasm \
+              -target wasip1 -buildmode=c-shared .
+          ls -la cigame.wasm
+          shellcade-kit check cigame.wasm
