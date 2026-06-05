@@ -1,4 +1,8 @@
-package main
+// Package pokies is the game logic of the shellcade devkit reference game,
+// factored out of the example's main package so it can be imported (e.g. for an
+// in-process comparison against the wasm build). The thin examples/pokies main
+// + exports wire kit.Main/kit.Run to Game{}; the behavior lives entirely here.
+package pokies
 
 import (
 	"context"
@@ -9,6 +13,37 @@ import (
 
 	kit "github.com/shellcade/kit"
 )
+
+// Game is the pokies registry entry: static metadata plus the per-room factory.
+type Game struct{}
+
+// Meta returns the static game metadata (mirrors the native pokies meta).
+func (Game) Meta() kit.GameMeta {
+	return kit.GameMeta{
+		Slug:             "pokies",
+		Name:             "Pokies",
+		ShortDescription: "Pull the lever on your own slot machine and chase your high score.",
+		MinPlayers:       1,
+		MaxPlayers:       5,
+		Tags:             []string{"slots", "casual"},
+
+		QuickModeLabel:    "Quick spin",
+		SoloModeLabel:     "Solo spin",
+		PrivateInviteLine: "Friends join your floor when they enter the code.",
+
+		Leaderboard: &kit.LeaderboardSpec{
+			MetricLabel: "Credits",
+			Direction:   kit.HigherBetter,
+			Aggregation: kit.BestResult,
+			Format:      kit.Integer,
+		},
+	}
+}
+
+// NewRoom returns the per-room behavior.
+func (Game) NewRoom(cfg kit.RoomConfig, svc kit.Services) kit.Handler {
+	return newRoom(cfg, svc)
+}
 
 const (
 	startBalance = 1000

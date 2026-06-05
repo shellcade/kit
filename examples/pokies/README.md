@@ -28,7 +28,7 @@ virtual clock that advances one heartbeat per wake. Build your time logic
 against `r.Now()` and it behaves identically native, in wasm, and under test.
 
 The four idioms below are everything. Each is live in
-[`room.go`](room.go); line ranges are pointers, not promises (read the code).
+[`room.go`](pokies/room.go); line ranges are pointers, not promises (read the code).
 
 ---
 
@@ -142,7 +142,7 @@ Three traps the idioms avoid:
 2. **Keep all time-state in the room struct.** It's the only thing that
    survives a freeze; a host-side timer wouldn't exist after a thaw.
 3. **`OnWake` does the work, then renders once.** Advance every due deadline,
-   then `Send` the frame — see [`room.go`](room.go) `OnWake`, which expires
+   then `Send` the frame — see [`room.go`](pokies/room.go) `OnWake`, which expires
    flashes, lands reels, refreshes config, and calls `rm.render(r)` last.
 
 For the SDK-level overview of these patterns, see the repo
