@@ -14,11 +14,21 @@ import "encoding/binary"
 const MaxEncoded = FrameBytes + FrameCells*2 + 8 // generous: worst-case cell-list
 
 // DeltaHeaderBytes is the normative frame-delta container header (ABI v2,
-// game-abi spec): u8 flags (bit0 = keyframe), u32 epoch, u16 runCount,
-// u16 reserved = 0. Every send/identical in v2 carries the delta container, so
-// the run-list encoders below stamp this header — the byte counts they report
-// are exactly what a production guest puts on the wire.
+// game-abi spec): u8 flags (bit0 = keyframe), u32 epoch, u16 runCount, then the
+// two geometry bytes u8 rows (24) + u8 cols (80) that replace the former
+// same-width reserved u16. Every send/identical in v2 carries the delta
+// container, so the run-list encoders below stamp this header — the byte counts
+// they report are exactly what a production guest puts on the wire (the
+// geometry field is the same width as the old reserved u16, so the table is
+// unchanged).
 const DeltaHeaderBytes = 9
+
+// Geometry bytes the v2 container header carries at offsets 7 and 8 (replacing
+// the former reserved u16): rows MUST be 24, cols MUST be 80.
+const (
+	hdrRows = Rows
+	hdrCols = Cols
+)
 
 // RunHeaderBytes is the per-run prefix inside a run-list payload: u16 startIndex
 // + u16 runLen, followed by runLen*24 packed cells.
@@ -44,9 +54,10 @@ func putDeltaHeader(dst []byte, keyframe bool, runCount int) {
 	} else {
 		dst[0] = 0
 	}
-	binary.LittleEndian.PutUint32(dst[1:], 0)             // u32 epoch (host-owned)
+	binary.LittleEndian.PutUint32(dst[1:], 0)                // u32 epoch (host-owned)
 	binary.LittleEndian.PutUint16(dst[5:], uint16(runCount)) // u16 runCount
-	binary.LittleEndian.PutUint16(dst[7:], 0)             // u16 reserved = 0
+	dst[7] = hdrRows                                         // u8 rows (24)
+	dst[8] = hdrCols                                         // u8 cols (80)
 }
 
 // cellEqual reports whether the 24-byte cell at offset o is identical in a and b.
@@ -90,14 +101,14 @@ func encodeFullPack(_ /*prev*/, next, dst []byte) int {
 // the modeled compose cost matches the real codec, not a memcpy): three u32 code
 // points (rune + cp2 + cp3), fg/bg quads, attr, cont, and the zero pad.
 func repackCell(src, dst []byte, o int) {
-	binary.LittleEndian.PutUint32(dst[o:], binary.LittleEndian.Uint32(src[o:]))     // rune
-	binary.LittleEndian.PutUint32(dst[o+4:], binary.LittleEndian.Uint32(src[o+4:])) // cp2
-	binary.LittleEndian.PutUint32(dst[o+8:], binary.LittleEndian.Uint32(src[o+8:])) // cp3
+	binary.LittleEndian.PutUint32(dst[o:], binary.LittleEndian.Uint32(src[o:]))             // rune
+	binary.LittleEndian.PutUint32(dst[o+4:], binary.LittleEndian.Uint32(src[o+4:]))         // cp2
+	binary.LittleEndian.PutUint32(dst[o+8:], binary.LittleEndian.Uint32(src[o+8:]))         // cp3
 	dst[o+12], dst[o+13], dst[o+14], dst[o+15] = src[o+12], src[o+13], src[o+14], src[o+15] // fg
 	dst[o+16], dst[o+17], dst[o+18], dst[o+19] = src[o+16], src[o+17], src[o+18], src[o+19] // bg
-	dst[o+20] = src[o+20] // attr
-	dst[o+21] = src[o+21] // cont
-	dst[o+22], dst[o+23] = 0, 0 // pad (canonical zero)
+	dst[o+20] = src[o+20]                                                                   // attr
+	dst[o+21] = src[o+21]                                                                   // cont
+	dst[o+22], dst[o+23] = 0, 0                                                             // pad (canonical zero)
 }
 
 // ---- (a) CELL-LIST --------------------------------------------------------
@@ -156,7 +167,7 @@ func encodeDirtyRows(prev, next, dst []byte) int {
 
 // encodeRunList coalesces changed cells into runs of CONSECUTIVE changed cells.
 // This is the v2 normative delta container: the 9-byte header (u8 flags,
-// u32 epoch, u16 runCount, u16 reserved) followed by runCount runs, each
+// u32 epoch, u16 runCount, u8 rows, u8 cols) followed by runCount runs, each
 // {u16 startIndex, u16 runLen, runLen*24 packed cells}. It amortizes the
 // per-cell index overhead of CELL-LIST across each contiguous span (a changed
 // word, a row segment), at 4 bytes/run + 24 bytes/cell. A runCount==0 payload
@@ -226,7 +237,7 @@ func framesEqual(a, b []byte) bool {
 func encodeKeyframe(_ /*prev*/, next, dst []byte) int {
 	putDeltaHeader(dst, true, 1)
 	p := DeltaHeaderBytes
-	binary.LittleEndian.PutUint16(dst[p:], 0)          // start index 0
+	binary.LittleEndian.PutUint16(dst[p:], 0)            // start index 0
 	binary.LittleEndian.PutUint16(dst[p+2:], FrameCells) // run length 1920
 	p += RunHeaderBytes
 	p += copy(dst[p:], next)

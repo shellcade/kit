@@ -41,9 +41,9 @@ const (
 	Rows       = 24
 	Cols       = 80
 	CellBytes  = 24
-	FrameCells = Rows * Cols // 1920
+	FrameCells = Rows * Cols            // 1920
 	FrameBytes = FrameCells * CellBytes // 46080
-	RowBytes   = Cols * CellBytes // 1920
+	RowBytes   = Cols * CellBytes       // 1920
 )
 
 // srcCellBytes is the round-1 capture cell width on disk; loadSeq widens each to
@@ -274,8 +274,8 @@ func synthGraphemeChurn() *Sequence {
 	// Base emoji that take a VS16 (emoji presentation) and/or a skin-tone
 	// modifier. We vary the cp2 (VS16 / skin tone) and cp3 (keycap) across
 	// frames so deltas ship real multi-code-point cells.
-	const vs16 = 0xFE0F        // VARIATION SELECTOR-16 (emoji presentation)
-	const keycap = 0x20E3      // COMBINING ENCLOSING KEYCAP
+	const vs16 = 0xFE0F                                            // VARIATION SELECTOR-16 (emoji presentation)
+	const keycap = 0x20E3                                          // COMBINING ENCLOSING KEYCAP
 	skin := []rune{0, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF} // none + 5 Fitzpatrick
 	bases := []rune{0x261D /*☝*/, 0x270B /*✋*/, 0x1F44D /*👍*/, 0x1F44B /*👋*/, '1', '2', '3', '#'}
 

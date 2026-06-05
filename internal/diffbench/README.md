@@ -23,7 +23,7 @@ emoji) are unsupported. A full packed frame is `24*80*24 = 46080` B.
 
 In **ABI v2** the frame-delta container *is* the frame path: every
 `send`/`identical` carries a delta with the normative **9-byte header** —
-`u8 flags` (bit0 = keyframe), `u32 epoch`, `u16 runCount`, `u16 reserved = 0` —
+`u8 flags` (bit0 = keyframe), `u32 epoch`, `u16 runCount`, `u8 rows = 24`, `u8 cols = 80` —
 followed by `runCount` runs of `{u16 startIndex, u16 runLen, runLen×24 B cells}`.
 The **keyframe form** (flags bit0 + one run covering all 1920 cells) is the
 bootstrap/full-frame mechanism and the worst-case fallback at **46093 B**
@@ -51,7 +51,7 @@ sequence; divide by the reported `frames` for per-frame), and **allocs/op**
 - **CELL-LIST** — per changed cell: `u16 index + 24 B cell` (26 B/cell).
 - **DIRTY-ROWS** — `u32` row bitmap + a full 1920 B packed row per dirty row.
 - **RUN-LIST** — the **v2 normative container**: the 9-byte header
-  (`u8 flags, u32 epoch, u16 runCount, u16 reserved`) + runs of consecutive
+  (`u8 flags, u32 epoch, u16 runCount, u8 rows, u8 cols`) + runs of consecutive
   changed cells `{u16 start, u16 len, len×24 B cells}`. A `runCount==0` payload
   (the header alone, 9 B) is the legal "no change" delta.
 - **SKIP-IDENTICAL** — compare-only; ship nothing when the frame is unchanged

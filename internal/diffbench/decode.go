@@ -43,7 +43,7 @@ func decodeDirtyRows(prev, payload []byte) []byte {
 }
 
 // decodeRunList parses the v2 delta container: a 9-byte header (u8 flags,
-// u32 epoch, u16 runCount, u16 reserved) then runCount runs. The keyframe bit
+// u32 epoch, u16 runCount, u8 rows, u8 cols) then runCount runs. The keyframe bit
 // (flags bit0) needs no special handling on reconstruct — a keyframe is just a
 // run-list whose runs (here, one run of all 1920 cells) overwrite a baseline
 // the host would have zeroed; against the bench's prev baseline the single
