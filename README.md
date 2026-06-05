@@ -22,14 +22,21 @@ cd mygame && go mod tidy && go run .
 | `kit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
 | `keyhold/`, `kittest/` | held-keys helper for action games; in-memory test double |
 | `wire/` | the ABI as code: version, names, packed payload codecs |
-| `examples/pokies` | the reference game (uses every SDK feature) |
 | `ABI.md` / `GUIDE.md` | the normative contract / the authoring guide |
+
+For complete, published example games, see the
+[games catalog](https://github.com/shellcade/games) — every game there is
+conformance-green; [pokies](https://github.com/shellcade/games/tree/main/games/bcook/pokies)
+exercises every SDK feature.
 
 ## Write a game
 
 Implement `kit.Game` + `kit.Handler` (six callbacks: OnStart/OnJoin/
 OnLeave/OnInput/OnWake/OnClose), call `kit.Run(game)` and add the eight
-`//go:export` trampolines — see `examples/pokies/main.go`.
+`//go:export` trampolines. The fastest start is `shellcade-kit new mygame`,
+which scaffolds exactly this; for a full real-game reference see
+[pokies](https://github.com/shellcade/games/tree/main/games/bcook/pokies) in
+the catalog.
 
 Rules of the road:
 - **Frames are pointers** (`*kit.Frame`). A frame is ~46KB; by-value frames
@@ -63,7 +70,7 @@ Rules of the road:
 ## Test and play
 
     shellcade-kit check game.wasm     # ABI handshake, meta, scripted room
-    devkit play  game.wasm     # play it in this terminal (Esc to leave)
+    shellcade-kit play  game.wasm     # play it in this terminal (Esc to leave)
     # flags: --seed N --heartbeat 50ms --config key=value --seats N
 
 **Multiplayer testing is hot-seat — no SSH, no network.** Pass `--seats N`
@@ -72,4 +79,6 @@ keyboard drives the active seat and **Ctrl-T** switches seats, so you can play
 both sides of a duel from one terminal. The wasm runner renders each seat's own
 per-player frame, so seat-switching also verifies per-viewer composition.
 
-From the shellcade repo: `make play-pokies` builds the example and plays it.
+To play a real published game's artifact, clone the
+[games catalog](https://github.com/shellcade/games), build a game's wasm with
+the dev-profile `tinygo build` above, and `shellcade-kit play game.wasm`.

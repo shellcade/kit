@@ -48,7 +48,14 @@ bump. Never hand-edit CHANGELOG.md or push tags manually.
 
 ```sh
 go test ./...                                  # incl. wire round-trip/fuzz
-go run ./examples/pokies                       # native dev runner
-cd examples/pokies && tinygo build -opt=1 -no-debug -gc=leaking \
-    -o pokies.wasm -target wasip1 -buildmode=c-shared .
+go build ./... && go vet ./...
+
+# end-to-end author journey (CI mirrors this): scaffold, build, verify.
+go run ./cmd/shellcade-kit new mygame
+cd mygame && go mod tidy && go run .           # native dev runner
+tinygo build -opt=1 -no-debug -gc=leaking \
+    -o mygame.wasm -target wasip1 -buildmode=c-shared .
 ```
+
+There are no in-repo example games: the published
+[games catalog](https://github.com/shellcade/games) is the example gallery.

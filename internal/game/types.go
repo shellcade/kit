@@ -4,7 +4,7 @@
 // sdk package's value types so a native game ports mechanically.
 //
 // A game implements Game + Handler and calls Run(game) from main(), plus the
-// eight //go:export trampolines (see examples/pokies/main.go).
+// eight //go:export trampolines (`shellcade-kit new` scaffolds exactly this).
 package game
 
 // ABIVersion is the ABI major version this SDK targets.
