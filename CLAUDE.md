@@ -31,13 +31,18 @@ normative contract). Improving these is always in scope.
 
 ## Releasing
 
-Versions/changelogs are driven by **changesets**: every user-visible change
-adds a `.changeset/*.md` (run `npx changeset`). Merging to main lets the
-changesets action open a Version Packages PR; merging THAT pushes the
-`vX.Y.Z` tag — and the tag IS the release (a Go module needs nothing more;
-there is no public CLI — scaffolding lives in `shellcade-kit new`). The GitHub
-Releases page carries only the `shellcade-kit` binaries, published from the
-private repo. Never hand-edit CHANGELOG.md or push tags manually.
+Versions/changelogs are driven by **changesets** — THIS repo is the single
+version authority. Every user-visible change adds a `.changeset/*.md` (run
+`npx changeset`); merging to main lets the changesets action open a Version
+Packages PR; merging THAT pushes the `vX.Y.Z` tag, and the tag IS the module
+release.
+
+**Lockstep**: `shellcade-kit` adopts this repo's version number. After a kit
+version tags, the private repo follows (`go get …/kit@vX.Y.Z`, tag `vX.Y.Z`
+there) and its GoReleaser attaches the binaries + Homebrew cask to THIS repo's
+existing `vX.Y.Z` release — it must NEVER create new tags here (that pollutes
+the module's version space). A shellcade-kit-only fix still rides a kit patch
+bump. Never hand-edit CHANGELOG.md or push tags manually.
 
 ## Build & test
 
