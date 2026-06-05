@@ -15,7 +15,7 @@ import (
 )
 
 // Version is the ABI major version.
-const Version uint32 = 1
+const Version uint32 = 2
 
 // Guest export names.
 const (
@@ -47,13 +47,14 @@ const (
 	FnProfileGet      = "profile_get"
 )
 
-// Frame geometry: 80x24 cells, 16 bytes per cell.
+// Frame geometry: 80x24 cells, 24 bytes per v2 grapheme cell.
 const (
 	Rows       = 24
 	Cols       = 80
-	CellBytes  = 16
-	FrameCells = Rows * Cols
-	FrameBytes = FrameCells * CellBytes
+	CellBytes  = 24
+	FrameCells = Rows * Cols          // 1920
+	FrameBytes = FrameCells * CellBytes // 46080
+	RowBytes   = Cols * CellBytes     // 1920
 )
 
 // Player kind codes.
@@ -121,9 +122,15 @@ type Meta struct {
 	Format         uint8
 }
 
-// Cell is one drawable cell of a frame.
+// Cell is one drawable cell of a frame. In v2 it carries up to three code
+// points of a grapheme cluster: Rune is the base, Cp2/Cp3 the extra code
+// points (0 = unused). The packed form is exactly 24 bytes (CellBytes), with
+// the canonical-zero rule (unused cp slots and pad are zero) enforced by
+// PutCell so cell equality is a 24-byte memcmp.
 type Cell struct {
 	Rune          rune
+	Cp2           rune
+	Cp3           rune
 	FGSet         bool
 	FGR, FGG, FGB uint8
 	BGSet         bool
@@ -337,44 +344,59 @@ func DecodeMeta(b []byte) (Meta, error) {
 
 // ---- Frames ----------------------------------------------------------------------
 
-// PutCell writes one cell at index i (0..FrameCells-1) into a FrameBytes buffer.
+// PutCell writes one cell at index i (0..FrameCells-1) into a FrameBytes buffer
+// using the v2 24-byte anchor layout:
+//
+//	rune@0  cp2@4  cp3@8  fg@12..15  bg@16..19  attr@20  cont@21  pad@22..23
+//
+// PutCell is the normative CANONICAL-ZERO enforcer: it always writes pad = 0
+// and writes whatever cp2/cp3 the cell carries (0 = unused), so even a
+// hand-built Cell with garbage left in a slot it should not use serializes
+// canonically — cell equality is then exactly a 24-byte memcmp, which is
+// load-bearing for delta determinism and hibernation byte-identity.
 func PutCell(buf []byte, i int, c Cell) {
 	o := i * CellBytes
-	binary.LittleEndian.PutUint32(buf[o:], uint32(c.Rune))
+	binary.LittleEndian.PutUint32(buf[o:], uint32(c.Rune))   // rune @0
+	binary.LittleEndian.PutUint32(buf[o+4:], uint32(c.Cp2))  // cp2  @4
+	binary.LittleEndian.PutUint32(buf[o+8:], uint32(c.Cp3))  // cp3  @8
 	if c.FGSet {
-		buf[o+4], buf[o+5], buf[o+6], buf[o+7] = 1, c.FGR, c.FGG, c.FGB
+		buf[o+12], buf[o+13], buf[o+14], buf[o+15] = 1, c.FGR, c.FGG, c.FGB
 	} else {
-		buf[o+4], buf[o+5], buf[o+6], buf[o+7] = 0, 0, 0, 0
+		buf[o+12], buf[o+13], buf[o+14], buf[o+15] = 0, 0, 0, 0
 	}
 	if c.BGSet {
-		buf[o+8], buf[o+9], buf[o+10], buf[o+11] = 1, c.BGR, c.BGG, c.BGB
+		buf[o+16], buf[o+17], buf[o+18], buf[o+19] = 1, c.BGR, c.BGG, c.BGB
 	} else {
-		buf[o+8], buf[o+9], buf[o+10], buf[o+11] = 0, 0, 0, 0
+		buf[o+16], buf[o+17], buf[o+18], buf[o+19] = 0, 0, 0, 0
 	}
-	buf[o+12] = c.Attr
+	buf[o+20] = c.Attr
 	if c.Cont {
-		buf[o+13] = 1
+		buf[o+21] = 1
 	} else {
-		buf[o+13] = 0
+		buf[o+21] = 0
 	}
-	buf[o+14], buf[o+15] = 0, 0
+	buf[o+22], buf[o+23] = 0, 0 // pad (canonical zero)
 }
 
-// GetCell reads one cell at index i from a FrameBytes buffer.
+// GetCell reads one cell at index i from a FrameBytes buffer (24-byte layout).
 func GetCell(buf []byte, i int) Cell {
 	o := i * CellBytes
 	var c Cell
 	c.Rune = rune(binary.LittleEndian.Uint32(buf[o:]))
-	c.FGSet = buf[o+4] == 1
-	c.FGR, c.FGG, c.FGB = buf[o+5], buf[o+6], buf[o+7]
-	c.BGSet = buf[o+8] == 1
-	c.BGR, c.BGG, c.BGB = buf[o+9], buf[o+10], buf[o+11]
-	c.Attr = buf[o+12]
-	c.Cont = buf[o+13] == 1
+	c.Cp2 = rune(binary.LittleEndian.Uint32(buf[o+4:]))
+	c.Cp3 = rune(binary.LittleEndian.Uint32(buf[o+8:]))
+	c.FGSet = buf[o+12] == 1
+	c.FGR, c.FGG, c.FGB = buf[o+13], buf[o+14], buf[o+15]
+	c.BGSet = buf[o+16] == 1
+	c.BGR, c.BGG, c.BGB = buf[o+17], buf[o+18], buf[o+19]
+	c.Attr = buf[o+20]
+	c.Cont = buf[o+21] == 1
 	return c
 }
 
-// CheckFrame validates a frame payload length.
+// CheckFrame validates a full-frame payload length (the bare packed grid; used
+// by the host-side baseline buffers, not the wire send path, which carries the
+// delta container instead — see CheckFrameDelta).
 func CheckFrame(b []byte) error {
 	if len(b) != FrameBytes {
 		return fmt.Errorf("wire: frame payload is %d bytes, want %d", len(b), FrameBytes)
