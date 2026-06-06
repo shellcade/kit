@@ -1,0 +1,6 @@
+# Cargo build output. diff-rs is a verification/measurement crate, not a shipped
+# game, so it has no .wasm artifact; only the host-native build output is ignored.
+/target
+
+# Cargo.lock IS committed (reproducible test/bench builds). The crate has zero
+# external dependencies, so it is tiny.
