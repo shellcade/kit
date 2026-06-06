@@ -98,7 +98,7 @@ impl Room {
 
     /// Select how subsequent input resolves (Nav/Command/Text). Host-side
     /// state: survives hibernation; do not re-issue on resume.
-    pub fn set_input_context(&mut self, ctx: InputContext) {
+    pub fn set_input_context_BROKEN(&mut self, ctx: InputContext) {
         host::host_set_input_context(ctx as i64);
     }
 
