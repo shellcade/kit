@@ -49,6 +49,102 @@ func TestMetaRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMetaConfigSpecsRoundTrip(t *testing.T) {
+	in := Meta{
+		Slug: "pokies", Name: "Pokies", ShortDescription: "spin to win",
+		MinPlayers: 1, MaxPlayers: 5,
+		ConfigSpecs: []ConfigSpec{
+			{Key: "odds-variant", Title: "Odds variant", Description: "PAR sheet: weights + paytable.",
+				Type: ConfigJSON, Default: `{"name":"Default"}`, Schema: `{"type":"object"}`},
+			{Key: "motd", Title: "Banner", Description: "Floor banner text.", Type: ConfigText},
+			{Key: "speed", Title: "Speed", Description: "Reel speed.", Type: ConfigNumber, Default: "1"},
+			{Key: "wild", Title: "Wilds", Description: "Enable wild faces.", Type: ConfigBool, Default: "false"},
+		},
+	}
+	out, err := DecodeMeta(EncodeMeta(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(in, out) {
+		t.Fatalf("round trip mismatch:\n in=%+v\nout=%+v", in, out)
+	}
+}
+
+// TestMetaPreConfigBytesDecode pins the presence guard: a payload encoded
+// WITHOUT the trailing config-spec section (a pre-v2.3 meta) decodes cleanly
+// with no specs. The bytes are hand-built to the old layout — EncodeMeta can
+// no longer produce them.
+func TestMetaPreConfigBytesDecode(t *testing.T) {
+	var w Buf
+	w.Str("pokies")
+	w.Str("Pokies")
+	w.Str("spin to win")
+	w.U16(1)
+	w.U16(5)
+	w.U16(1)
+	w.Str("slots")
+	w.Str("")
+	w.Str("")
+	w.Str("")
+	w.Bool(true) // leaderboard block ends the old payload
+	w.Str("Credits")
+	w.U8(0)
+	w.U8(0)
+	w.U8(0)
+	out, err := DecodeMeta(w.B)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ConfigSpecs != nil {
+		t.Fatalf("pre-config bytes decoded specs: %+v", out.ConfigSpecs)
+	}
+	if out.Slug != "pokies" || !out.HasLeaderboard || out.MetricLabel != "Credits" {
+		t.Fatalf("pre-config fields corrupted: %+v", out)
+	}
+}
+
+func TestMetaZeroCountConfigSection(t *testing.T) {
+	b := EncodeMeta(Meta{Slug: "x", Name: "y"})
+	// The new encoder always writes the section: the payload ends with a
+	// zero u16 count, and it decodes to nil specs.
+	if b[len(b)-2] != 0 || b[len(b)-1] != 0 {
+		t.Fatalf("want trailing zero count, got % x", b[len(b)-2:])
+	}
+	out, err := DecodeMeta(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ConfigSpecs != nil {
+		t.Fatalf("zero-count section decoded specs: %+v", out.ConfigSpecs)
+	}
+}
+
+func TestValidateConfigSpecs(t *testing.T) {
+	ok := []ConfigSpec{
+		{Key: "odds-variant", Type: ConfigJSON, Schema: `{"type":"object"}`},
+		{Key: "motd", Type: ConfigText},
+	}
+	if err := ValidateConfigSpecs(ok); err != nil {
+		t.Fatalf("valid specs rejected: %v", err)
+	}
+	if err := ValidateConfigSpecs(nil); err != nil {
+		t.Fatalf("nil specs rejected: %v", err)
+	}
+	cases := map[string][]ConfigSpec{
+		"empty key":          {{Key: "", Type: ConfigText}},
+		"duplicate key":      {{Key: "k", Type: ConfigText}, {Key: "k", Type: ConfigBool}},
+		"reserved prefix":    {{Key: "host.heartbeat_ms", Type: ConfigNumber}},
+		"unknown type":       {{Key: "k", Type: 9}},
+		"schema on non-json": {{Key: "k", Type: ConfigNumber, Schema: `{}`}},
+		"schema not JSON":    {{Key: "k", Type: ConfigJSON, Schema: `{nope`}},
+	}
+	for name, specs := range cases {
+		if err := ValidateConfigSpecs(specs); err == nil {
+			t.Errorf("%s: want error, got nil", name)
+		}
+	}
+}
+
 func TestMetaRejectsEmptySlug(t *testing.T) {
 	if _, err := DecodeMeta(EncodeMeta(Meta{Name: "x"})); err == nil {
 		t.Fatal("want error for empty slug")
@@ -95,6 +191,9 @@ func TestResultRoundTrip(t *testing.T) {
 
 func FuzzDecodeMeta(f *testing.F) {
 	f.Add(EncodeMeta(Meta{Slug: "x", Name: "y"}))
+	f.Add(EncodeMeta(Meta{Slug: "x", Name: "y", ConfigSpecs: []ConfigSpec{
+		{Key: "k", Title: "K", Type: ConfigJSON, Default: "{}", Schema: `{"type":"object"}`},
+	}}))
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, b []byte) {
 		_, _ = DecodeMeta(b) // must never panic

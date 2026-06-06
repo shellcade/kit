@@ -140,6 +140,29 @@ type LeaderboardSpec struct {
 	Format      MetricFormat
 }
 
+// ConfigType tells the platform's admin surface how to render and validate a
+// declared config value (values match the wire type codes).
+type ConfigType uint8
+
+const (
+	ConfigText   ConfigType = iota // single-line string
+	ConfigNumber                   // decimal number
+	ConfigBool                     // true/false
+	ConfigJSON                     // JSON document (multiline / rich form)
+)
+
+// ConfigKeySpec declares one admin-settable config key the game reads via
+// Services.Config. Declaring specs is optional; they exist so the platform's
+// admin tools can render a real get/edit surface for the game's keys.
+type ConfigKeySpec struct {
+	Key         string     // the ConfigStore key the game reads
+	Title       string     // short admin-facing label
+	Description string     // one or two sentences for the admin screen
+	Type        ConfigType // how the value is edited/validated
+	Default     string     // value the game uses when unset ("" = not declared)
+	Schema      string     // JSON Schema document (ConfigJSON only; "" = none)
+}
+
 // GameMeta is the static game metadata (mirrors native sdk.GameMeta).
 type GameMeta struct {
 	Slug             string
@@ -154,6 +177,12 @@ type GameMeta struct {
 	PrivateInviteLine string
 
 	Leaderboard *LeaderboardSpec
+
+	// Config optionally declares the game's admin-settable config keys.
+	// Nil/empty means the game declares no config surface (the platform's
+	// generic editor still works). Declarations are validated at meta encode
+	// time — an invalid spec list is an authoring bug and panics there.
+	Config []ConfigKeySpec
 }
 
 // Status is a player's terminal outcome.

@@ -345,6 +345,25 @@ Per-game configuration (tunable by arcade admins without your involvement)
 arrives through `r.Services().Config.Get(ctx, "key")` — read it on a slow
 cadence in `OnWake` and fall back to compiled defaults when absent.
 
+Declare the keys you read in `GameMeta.Config` so the arcade's admin tools can
+render a real editor for them instead of a blind key/value prompt:
+
+```go
+Config: []kit.ConfigKeySpec{{
+    Key:         "odds-variant",
+    Title:       "Odds variant",
+    Description: "PAR sheet: per-symbol reel weights plus the paytable.",
+    Type:        kit.ConfigJSON,        // or ConfigText / ConfigNumber / ConfigBool
+    Default:     defaultVariantJSON,    // what you use when the key is unset
+    Schema:      variantSchemaJSON,     // optional JSON Schema → rich form editing
+}},
+```
+
+Declarations are optional and validated at `meta()` time: keys must be unique,
+non-empty, and never under the reserved `host.` prefix, and `Schema` (json keys
+only) must parse as JSON. Admins can still set undeclared keys — specs improve
+the editor, they don't gate the store.
+
 ## Multiplayer
 
 Rooms hold 1–N players (your `GameMeta` declares the range). Render
