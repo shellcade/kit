@@ -8,13 +8,23 @@ SSH at shellcade.com.
 
 ## Quickstart
 
-Grab the one author tool, `shellcade-kit` (scaffold, verify, play), from
-this repo's Releases:
+Install the one author tool, `shellcade-kit` (scaffold, verify, play).
+On macOS, use Homebrew:
+
+    brew install shellcade/tap/shellcade-kit
+
+<details>
+<summary>Manual download (Linux / Windows / no brew)</summary>
+
+Grab a build for your platform from this repo's Releases:
 
     https://github.com/shellcade/kit/releases
 
-(macOS may quarantine the download:
-`xattr -d com.apple.quarantine shellcade-kit` clears it.)
+(macOS downloads may be quarantined:
+`xattr -d com.apple.quarantine shellcade-kit` clears it. The brew cask
+strips this for you.)
+
+</details>
 
 Scaffold a game and play it in your terminal — the inner loop is a plain
 Go program (debugger, prints, sub-second builds), no wasm required:
