@@ -23,7 +23,7 @@ jobs:
       # the vX.Y.Z tag — and the tag triggers the GoReleaser workflow.
       - uses: changesets/action@v1
         with:
-          version: npx changeset version
+          version: npm run version # changeset version + sync rust/Cargo.toml (lockstep)
           publish: npm run release
         env:
           # A PAT (contents:write + pull-requests:write on this repo) lets the

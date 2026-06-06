@@ -139,6 +139,16 @@ pub mod prelude {
 #[macro_export]
 macro_rules! shellcade_game {
     ($game:expr) => {
+        // Native builds (cargo test) have no exports, so the registration is
+        // surfaced as a doc-hidden pub fn instead: it type-checks the Game
+        // impl, roots the whole game for dead-code analysis, and hands tests
+        // a constructor.
+        #[cfg(not(target_arch = "wasm32"))]
+        #[doc(hidden)]
+        pub fn __shellcade_game() -> impl $crate::Game {
+            $game
+        }
+
         #[cfg(target_arch = "wasm32")]
         const _: () = {
             ::std::thread_local! {
