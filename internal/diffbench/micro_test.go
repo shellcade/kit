@@ -2,7 +2,7 @@ package diffbench
 
 import "testing"
 
-// micro benchmarks mirror the Rust diff-rs examples/bench.rs cases EXACTLY (same
+// micro benchmarks mirror the Rust crossverify examples/bench.rs cases EXACTLY (same
 // four change densities, single prev->next pair, RUN-LIST) so the Go ns/frame
 // and Rust ns/frame are directly comparable (the matrix BenchmarkEncode reports
 // per-SEQUENCE ns/op, which mixes densities). Run:
