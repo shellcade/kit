@@ -1,6 +1,10 @@
 package game
 
-import "github.com/shellcade/kit/v2/wire"
+import (
+	"bytes"
+
+	"github.com/shellcade/kit/v2/wire"
+)
 
 // The guest side of the ABI codecs: thin mappings between wire types (the
 // canonical encodings owned by gamekit/wire) and the authoring types.
@@ -13,28 +17,82 @@ type callContext struct {
 	settled      bool
 }
 
+// Roster cache: the host re-sends the full member list in EVERY callback
+// payload, but rosters change only on join/leave/index-shift. Decoding N
+// members afresh per callback is O(N) string allocations per input/wake —
+// under -gc=leaking (the recommended build profile while the TinyGo GC issue
+// is open) those allocations are PERMANENT, so a long-lived large room leaks
+// its roster at callback rate (load testing measured ~100KB leaked per
+// callback at 1000 players, OOMing the guest within seconds of play).
+//
+// Instead, the raw wire bytes of the member section are compared against the
+// previous callback's (a ~100B/member memcmp); on a match the previously
+// decoded []Player is reused with ZERO allocation, and only a real roster
+// change re-decodes. The byte compare is strictly stronger than the old
+// rosterFingerprint hash (which this replaces): any join/leave/index-shift/
+// kind-change alters the bytes.
+//
+// Lifetime contract: the members slice handed to a callback (and returned by
+// Room.Members()) is valid for the DURATION OF THAT CALLBACK; a later roster
+// change re-decodes into the same backing array. Games that retain players
+// across callbacks must copy the Player values they keep (kit games key
+// long-lived state by AccountID already).
+var (
+	rosterCache      []Player
+	rosterCacheBytes []byte
+)
+
 // decodeCtx decodes a CallContext and returns the reader positioned at the
-// event-specific extra payload.
-func decodeCtx(b []byte) (callContext, *wire.Rd) {
+// event-specific extra payload, plus whether the roster changed since the
+// previous callback (true on the first callback).
+func decodeCtx(b []byte) (callContext, *wire.Rd, bool) {
 	r := &wire.Rd{B: b}
-	wc := wire.DecodeCtx(r)
-	c := callContext{
-		nowUnixNanos: wc.NowUnixNanos,
-		cfg: RoomConfig{
-			Mode:       Mode(wc.Mode),
-			Capacity:   int(wc.Capacity),
-			MinPlayers: int(wc.MinPlayers),
-			Seed:       wc.Seed,
-			SeedSet:    wc.SeedSet,
-		},
-		settled: wc.Settled,
+	c := callContext{nowUnixNanos: r.I64()}
+	c.cfg.Seed = r.I64()
+	c.cfg.SeedSet = r.Bool()
+	c.cfg.Mode = Mode(r.U8())
+	c.cfg.Capacity = int(r.U16())
+	c.cfg.MinPlayers = int(r.U16())
+
+	// Skim the member section (count + per-member strings) without decoding,
+	// to find its extent for the cache compare.
+	start := r.Off
+	n := int(r.U16())
+	for i := 0; i < n && !r.Bad; i++ {
+		r.SkipStr() // handle
+		r.SkipStr() // account id
+		r.SkipStr() // conn
+		r.U8()      // kind
 	}
-	for _, p := range wc.Members {
-		c.members = append(c.members, Player{
-			AccountID: p.AccountID, Handle: p.Handle, Conn: p.Conn, Kind: Kind(p.Kind),
-		})
+	region := r.B[start:r.Off]
+
+	changed := rosterCacheBytes == nil || !bytes.Equal(region, rosterCacheBytes)
+	if changed {
+		rr := &wire.Rd{B: region}
+		cnt := int(rr.U16())
+		rosterCache = rosterCache[:0]
+		for i := 0; i < cnt && !rr.Bad; i++ {
+			var p Player
+			p.Handle = rr.Str()
+			p.AccountID = rr.Str()
+			p.Conn = rr.Str()
+			p.Kind = Kind(rr.U8())
+			rosterCache = append(rosterCache, p)
+		}
+		if r.Bad {
+			// Malformed member section: don't prime the cache — every
+			// malformed callback stays "changed" and decodes what it can
+			// (the pre-cache behavior). A well-formed region is ≥2 bytes
+			// (the count), so a primed cache is never nil.
+			rosterCacheBytes = nil
+		} else {
+			rosterCacheBytes = append(rosterCacheBytes[:0], region...)
+		}
 	}
-	return c, r
+	c.members = rosterCache
+
+	c.settled = r.Bool()
+	return c, r, changed
 }
 
 // encodeMeta packs GameMeta for the meta export.
@@ -104,9 +162,12 @@ func encodeFrame(f *Frame) []byte {
 // ---- frame diffing state (ABI v2) -------------------------------------------
 
 // rosterCap is the fixed compile-time roster ceiling for per-index baselines.
-// At 24-byte cells the baseline table is (rosterCap+broadcast)*FrameBytes ≈
-// 0.78 MB of guest linear memory, lazily grown, far under the 32 MiB cap.
-const rosterCap = 16
+// 1024 supports large-room games (the SDK SILENTLY DROPS Send for an index
+// >= rosterCap, so the cap must comfortably exceed any real roster).
+// Guest linear memory stays proportional to the ACTIVE roster, not the cap:
+// per-slot baselines are lazily allocated on first commit — ~45 KiB per
+// actively-sent-to consumer instead of a ~47 MiB static table.
+const rosterCap = 1024
 
 // Per-consumer SDK baseline state, allocated once and reused forever (leaking-GC
 // safe; one room per instance + serial callbacks ⇒ no locking). Each slot holds
@@ -114,8 +175,9 @@ const rosterCap = 16
 // host-returned epoch it was stamped with, and a present flag. Index rosterCap
 // is the broadcast (Identical) slot. deltaScratch is the pre-sized worst-case
 // (keyframe-sized) delta buffer written by index — never wire.Buf, which grows.
+// Baseline slots are nil until first committed (lazy; see rosterCap note).
 var (
-	baselines       [rosterCap + 1][wire.FrameBytes]byte
+	baselines       [rosterCap + 1][]byte // wire.FrameBytes each once allocated
 	baselineEpoch   [rosterCap + 1]uint32
 	baselinePresent [rosterCap + 1]bool
 	deltaScratch    [wire.MaxDeltaBytes]byte
@@ -145,7 +207,7 @@ func buildSendPayload(slot int, packed []byte) []byte {
 		n := wire.BuildKeyframe(packed, deltaScratch[:], epoch)
 		return deltaScratch[:n]
 	}
-	n := wire.BuildFrameDelta(baselines[slot][:], packed, deltaScratch[:], epoch)
+	n := wire.BuildFrameDelta(baselines[slot], packed, deltaScratch[:], epoch)
 	if n >= wire.KeyframeBytes {
 		n = wire.BuildKeyframe(packed, deltaScratch[:], epoch)
 	}
@@ -154,35 +216,15 @@ func buildSendPayload(slot int, packed []byte) []byte {
 
 // commitBaseline records `packed` as slot `slot`'s baseline and stamps it with
 // the host-returned epoch, marking it present. Called on a successful send.
+// The slot buffer is allocated on first commit (lazy; leaking-GC safe because
+// a slot is allocated at most once and reused forever).
 func commitBaseline(slot int, packed []byte, returnedEpoch uint32) {
-	copy(baselines[slot][:], packed)
+	if baselines[slot] == nil {
+		baselines[slot] = make([]byte, wire.FrameBytes)
+	}
+	copy(baselines[slot], packed)
 	baselineEpoch[slot] = returnedEpoch
 	baselinePresent[slot] = true
-}
-
-// rosterFingerprint is a cheap fixed-scratch identity of the current roster used
-// to detect a roster change between callbacks (join/leave/index-shift): the
-// member count plus a rolling hash of each member's account id + kind. It needs
-// no allocation and survives across callbacks as a package global.
-var (
-	lastRosterPrint uint64
-	lastRosterSet   bool
-)
-
-func rosterFingerprint(members []Player) uint64 {
-	h := uint64(1469598103934665603) // FNV-1a offset
-	mix := func(b byte) { h ^= uint64(b); h *= 1099511628211 }
-	mix(byte(len(members)))
-	mix(byte(len(members) >> 8))
-	for _, p := range members {
-		for i := 0; i < len(p.AccountID); i++ {
-			mix(p.AccountID[i])
-		}
-		mix(0)
-		mix(byte(p.Kind))
-		mix('|')
-	}
-	return h
 }
 
 // encodeResult packs a Result against the current roster (player -> index).

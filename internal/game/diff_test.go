@@ -88,12 +88,10 @@ func resetDiffState() {
 	for i := range baselinePresent {
 		baselinePresent[i] = false
 		baselineEpoch[i] = 0
-		for j := range baselines[i] {
-			baselines[i][j] = 0
-		}
+		baselines[i] = nil // lazy slots: drop, re-allocated on next commit
 	}
-	lastRosterSet = false
-	lastRosterPrint = 0
+	rosterCache = nil
+	rosterCacheBytes = nil
 }
 
 func frameWith(text string) *Frame {
@@ -189,22 +187,96 @@ func TestIdenticalReconcilesAllSlotsThenSend(t *testing.T) {
 	}
 }
 
-func TestRosterChangeInvalidates(t *testing.T) {
+// ctxPayload wire-encodes a CallContext for decodeCtx tests.
+func ctxPayload(members ...wire.Player) []byte {
+	var w wire.Buf
+	wire.EncodeCtx(&w, wire.Ctx{
+		NowUnixNanos: 1, Seed: 7, SeedSet: true,
+		Mode: 0, Capacity: 1000, MinPlayers: 1,
+		Members: members,
+	})
+	return w.B
+}
+
+func TestRosterCache(t *testing.T) {
 	resetDiffState()
-	p1 := rosterFingerprint([]Player{{AccountID: "a", Kind: KindMember}})
-	p2 := rosterFingerprint([]Player{{AccountID: "a", Kind: KindMember}, {AccountID: "b", Kind: KindMember}})
-	if p1 == p2 {
-		t.Fatal("roster fingerprint collision on join")
+	ada := wire.Player{Handle: "ada", AccountID: "a", Conn: "c1", Kind: 1}
+	bob := wire.Player{Handle: "bob", AccountID: "b", Conn: "c2", Kind: 1}
+
+	// First callback: changed=true, members decoded.
+	c1, _, changed := decodeCtx(ctxPayload(ada))
+	if !changed {
+		t.Fatal("first callback must report a roster change")
 	}
-	// Same roster -> same print.
-	if p1 != rosterFingerprint([]Player{{AccountID: "a", Kind: KindMember}}) {
-		t.Fatal("fingerprint not stable for identical roster")
+	if len(c1.members) != 1 || c1.members[0].AccountID != "a" {
+		t.Fatalf("decoded members = %+v", c1.members)
 	}
-	// invalidateBaselines clears present.
+
+	// Same roster bytes: changed=false and the SAME backing slice is reused
+	// (zero member allocations — the -gc=leaking lifeline).
+	c2, _, changed := decodeCtx(ctxPayload(ada))
+	if changed {
+		t.Fatal("identical roster must not report a change")
+	}
+	if len(c2.members) != 1 || &c1.members[0] != &c2.members[0] {
+		t.Fatal("unchanged roster did not reuse the cached members slice")
+	}
+
+	// A join: changed=true, members re-decoded.
+	c3, _, changed := decodeCtx(ctxPayload(ada, bob))
+	if !changed {
+		t.Fatal("join must report a roster change")
+	}
+	if len(c3.members) != 2 || c3.members[1].AccountID != "b" {
+		t.Fatalf("post-join members = %+v", c3.members)
+	}
+
+	// A leave back to the original shape: changed again, and correct.
+	c4, _, changed := decodeCtx(ctxPayload(ada))
+	if !changed || len(c4.members) != 1 {
+		t.Fatalf("leave: changed=%v members=%+v", changed, c4.members)
+	}
+
+	// invalidateBaselines clears present (the decodeCall side effect of a
+	// roster change).
 	baselinePresent[0] = true
 	baselinePresent[broadcastSlot] = true
 	invalidateBaselines()
 	if baselinePresent[0] || baselinePresent[broadcastSlot] {
 		t.Fatal("invalidateBaselines did not clear present")
+	}
+}
+
+// TestLazyBaselineHighSlot: slots beyond the old 16-slot table work and are
+// allocated lazily (the 1024-player patch's regression guard — the SDK used
+// to silently drop sends for index >= 16).
+func TestLazyBaselineHighSlot(t *testing.T) {
+	resetDiffState()
+	const slot = 900
+	if baselines[slot] != nil {
+		t.Fatal("slot 900 allocated before first commit")
+	}
+	f := frameWith("deep")
+	packed := append([]byte(nil), encodeFrame(f)...)
+
+	// First send to the slot: keyframe form (not present), then commit.
+	payload := buildSendPayload(slot, packed)
+	if !wire.IsKeyframe(payload) {
+		t.Fatal("first send to a fresh high slot must be a keyframe")
+	}
+	commitBaseline(slot, packed, 5)
+	if baselines[slot] == nil || !baselinePresent[slot] {
+		t.Fatal("commit did not lazily allocate + mark the high slot")
+	}
+	if !bytes.Equal(baselines[slot], packed) {
+		t.Fatal("high-slot baseline does not match the committed frame")
+	}
+
+	// Second send: a delta against the lazily-allocated baseline.
+	f2 := frameWith("deeq")
+	packed2 := encodeFrame(f2)
+	payload2 := buildSendPayload(slot, packed2)
+	if wire.IsKeyframe(payload2) {
+		t.Fatal("second send to the slot should be a delta, not a keyframe")
 	}
 }
