@@ -12,8 +12,8 @@ on:
 # to this repo's matching release. Bump the version AND the linux/amd64 sha
 # (from that release's checksums.txt) together when adopting a new toolchain.
 env:
-  SHELLCADE_KIT_VERSION: "2.0.2"
-  SHELLCADE_KIT_SHA256: "11f39b4cb9a3a9ec7c9e2819ac9322a426b3ac5ab2b9dd2497795ed65bbb8c31"
+  SHELLCADE_KIT_VERSION: "2.2.0"
+  SHELLCADE_KIT_SHA256: "eab71d43085ce894a0075af0c3af71c9e23c8f3150cc50e46d0df3668742eff7"
 
 jobs:
   test:
@@ -73,6 +73,44 @@ jobs:
               -target wasip1 -buildmode=c-shared .
           ls -la cigame.wasm
           shellcade-kit check cigame.wasm
+
+  # Rust author journey: the Rust mirror of the wasm job above — scaffold with
+  # the pinned shellcade-kit (`new --rust`), point the scaffold's crate dep at
+  # the PR's checkout (the cargo equivalent of `go mod edit -replace`), build
+  # the release artifact, and run the arcade's acceptance check on it. This is
+  # the gate that catches scaffolder/crate drift at PR time.
+  wasm-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: kit }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-wasip1 }
+      - name: fetch pinned shellcade-kit (sha256-verified)
+        run: |
+          set -euo pipefail
+          ver="${SHELLCADE_KIT_VERSION}"
+          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
+          base="https://github.com/shellcade/kit/releases/download/v${ver}"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
+          curl -fsSL -o checksums.txt "${base}/checksums.txt"
+          grep " ${asset}\$" checksums.txt | sha256sum -c -
+          tar -xzf "${asset}" shellcade-kit
+          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+          shellcade-kit version
+      - name: scaffold a fresh Rust game
+        run: shellcade-kit new --rust cigame
+      - name: build against this PR's crate (release profile) and check
+        run: |
+          set -euo pipefail
+          cd cigame
+          # The scaffold pins a released kit tag; point it at the PR's checkout
+          # so the gate exercises THIS repo's crate.
+          sed -i 's|^shellcade-kit = .*|shellcade-kit = { path = "../kit/rust" }|' Cargo.toml
+          cargo build --release --target wasm32-wasip1
+          ls -la target/wasm32-wasip1/release/cigame.wasm
+          shellcade-kit check target/wasm32-wasip1/release/cigame.wasm
 
   # Rust SDK: the shellcade-kit crate (rust/) and its golden-vector harness
   # (crossverify/). Gates: unit tests, byte-identity with the Go reference
