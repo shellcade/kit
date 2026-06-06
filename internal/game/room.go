@@ -45,10 +45,13 @@ func (r *room) index(p Player) int {
 // Send ships a per-player frame as a v2 delta container (D4/D9). It packs the
 // frame once (encodeFrame enforces canonical-zero), builds a delta against the
 // slot's baseline — or a keyframe when the slot is not present (first send,
-// rejection, roster change) or the delta meets/exceeds the budget — sends it,
-// and mirrors the host-returned epoch: if the host rejected (returned a
-// different epoch) the slot is left not-present so the next send is a keyframe;
-// on accept the baseline is updated and stamped with the returned epoch.
+// roster change) or the delta meets/exceeds the budget — sends it, and mirrors
+// the host-returned epoch. If the host rejected the delta (returned a different
+// epoch: hibernation restore, baseline loss), the SAME frame is immediately
+// re-sent as a keyframe — we are still on-stack, keyframes are unconditionally
+// accepted, and without the retry this render would be silently lost to the
+// viewer (and a restored room would fail byte-identical hibernation
+// conformance). One retry only: a keyframe cannot be rejected.
 func (r *room) Send(p Player, f *Frame) {
 	idx := r.index(p)
 	if idx < 0 || f == nil || idx >= rosterCap {
@@ -56,15 +59,19 @@ func (r *room) Send(p Player, f *Frame) {
 	}
 	packed := encodeFrame(f)
 	sentEpoch := baselineEpoch[idx]
+	wasDelta := baselinePresent[idx]
 	payload := buildSendPayload(idx, packed)
 	m := alloc(payload)
 	returned := uint32(hostSend(uint64(idx), m.Offset()))
 	m.Free()
-	if returned != sentEpoch && baselinePresent[idx] {
-		// Host rejected the delta (epoch superseded): force a keyframe next send.
+	if returned != sentEpoch && wasDelta {
+		// Rejected delta: resync to the host's epoch and retry as a keyframe.
 		baselinePresent[idx] = false
 		baselineEpoch[idx] = returned
-		return
+		retry := buildSendPayload(idx, packed) // keyframe form (slot not present)
+		m = alloc(retry)
+		returned = uint32(hostSend(uint64(idx), m.Offset()))
+		m.Free()
 	}
 	commitBaseline(idx, packed, returned)
 }
@@ -72,21 +79,28 @@ func (r *room) Send(p Player, f *Frame) {
 // Identical broadcasts one frame to every player. It diffs against the broadcast
 // baseline; on accept it reconciles EVERY per-index baseline (copy the frame in,
 // stamp the returned epoch) so a later per-player Send diffs against the correct
-// baseline (D7). A keyframe is sent when the broadcast slot is not present.
+// baseline (D7). A keyframe is sent when the broadcast slot is not present, and
+// a rejected delta is immediately retried as a keyframe (same rationale as Send:
+// no silently lost render, byte-identical hibernation conformance).
 func (r *room) Identical(f *Frame) {
 	if f == nil {
 		return
 	}
 	packed := encodeFrame(f)
 	sentEpoch := baselineEpoch[broadcastSlot]
+	wasDelta := baselinePresent[broadcastSlot]
 	payload := buildSendPayload(broadcastSlot, packed)
 	m := alloc(payload)
 	returned := uint32(hostIdentical(m.Offset()))
 	m.Free()
-	if returned != sentEpoch && baselinePresent[broadcastSlot] {
+	if returned != sentEpoch && wasDelta {
+		// Rejected delta: resync to the host's epoch and retry as a keyframe.
 		baselinePresent[broadcastSlot] = false
 		baselineEpoch[broadcastSlot] = returned
-		return
+		retry := buildSendPayload(broadcastSlot, packed) // keyframe form
+		m = alloc(retry)
+		returned = uint32(hostIdentical(m.Offset()))
+		m.Free()
 	}
 	// Reconcile the broadcast slot and EVERY per-index baseline.
 	commitBaseline(broadcastSlot, packed, returned)

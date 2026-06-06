@@ -291,10 +291,15 @@ grid, an `epoch`, and a present flag.
 - Every call **returns** the epoch the guest must stamp its baseline with.
 
 The **guest mirrors** the returned epoch. If the returned epoch differs from the
-one it sent (the host rejected the delta), the guest's **next send to that slot
-is a forced keyframe**. The guest never decides baseline validity — it only
-mirrors the host's authority. This makes every failure mode **degrade-to-drop**
-(one frame re-sent, likely coalesced away), never a corrupt frame, and closes
+one it sent (the host rejected the delta), the guest MUST **immediately re-send
+the SAME frame as a keyframe within the same callback**, stamped with the
+returned epoch — a keyframe cannot be rejected, so one retry always lands. The
+guest never decides baseline validity — it only mirrors the host's authority.
+The retry means **no render is ever lost** to a rejection: without it the first
+post-restore frame per consumer slot silently vanishes (the viewer's screen goes
+stale until the game's next render), and a restored room cannot satisfy §8's
+byte-identical conformance, which compares the restored stream frame-for-frame
+against an unhibernated control with **no dropped-frame tolerance**. This closes
 the desync hole that a guest-side roster/account inference would leave open — in
 particular the solo / same-account rehydrate after hibernation (§8).
 
@@ -324,7 +329,9 @@ exactly the host envelope:
 1. **Canonical-zero cells** (§4.3a) — a stray pad/cp bit silently diverges the
    guest's baseline from the host's, corrupting the guest's own later runs.
 2. **Epoch discipline** (§4.6) — stamp the host-returned epoch; send a keyframe
-   on first send, on any rejection, and after any roster change.
+   on first send and after any roster change; on a rejection, immediately
+   re-send the same frame as a keyframe within the same callback (required —
+   hibernation conformance compares frame-for-frame with no drop tolerance).
 3. **Completeness is the guest's problem** — a changed cell never shipped stays
    stale for viewers until the next keyframe; the host cannot detect it.
 4. **`identical` reconciles all slots** — a guest mixing broadcast and
