@@ -37,7 +37,10 @@
 package smoke
 
 import (
+	"time"
+
 	kit "github.com/shellcade/kit/v2"
+	"github.com/shellcade/kit/v2/internal/game"
 	internal "github.com/shellcade/kit/v2/internal/smoke"
 )
 
@@ -67,6 +70,12 @@ const DefaultHeartbeat = internal.DefaultHeartbeat
 
 // Parse decodes and validates a smoke.yaml; errors name the offending line.
 func Parse(b []byte) (*Script, error) { return internal.Parse(b) }
+
+// SeedEpoch is the virtual-clock start for a seed — the same fixed,
+// seed-derived instant the dev runner's -seed mode uses. Any harness running
+// a smoke script (the devkit CLI's wasm path included) must start its clock
+// here for runs to agree byte-for-byte.
+func SeedEpoch(seed int64) time.Time { return game.SeedEpoch(seed) }
 
 // Run executes a parsed script against the game natively on a virtual-clock,
 // seeded room, returning the captured shots in script order.
