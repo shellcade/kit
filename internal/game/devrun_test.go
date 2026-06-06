@@ -10,21 +10,21 @@ import (
 
 func TestSeedEpochDeterministic(t *testing.T) {
 	// Same seed -> same epoch; different seeds -> (generally) different epochs.
-	if seedEpoch(42) != seedEpoch(42) {
+	if SeedEpoch(42) != SeedEpoch(42) {
 		t.Fatal("seedEpoch is not a pure function of the seed")
 	}
-	if seedEpoch(1) == seedEpoch(2) {
+	if SeedEpoch(1) == SeedEpoch(2) {
 		t.Fatal("distinct small seeds collapsed to the same epoch")
 	}
 	// A negative seed must still yield a sane (post-base, non-panicking) time.
-	if got := seedEpoch(-1); got.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
+	if got := SeedEpoch(-1); got.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("negative seed produced a pre-base epoch: %v", got)
 	}
 }
 
 func TestVirtualClockAdvancesOneBeatPerWake(t *testing.T) {
 	beat := 50 * time.Millisecond
-	r := &nativeRoom{virtual: true, beat: beat, clock: seedEpoch(7)}
+	r := &nativeRoom{virtual: true, beat: beat, clock: SeedEpoch(7)}
 	start := r.Now()
 
 	// The run loop advances the clock by exactly one beat immediately before
