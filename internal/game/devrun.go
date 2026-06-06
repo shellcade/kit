@@ -80,7 +80,7 @@ func Main(g Game) {
 	if seedSet {
 		r.virtual = true
 		r.beat = *heartbeat
-		r.clock = seedEpoch(s)
+		r.clock = SeedEpoch(s)
 	}
 	h := g.NewRoom(cfg, r.Services())
 
@@ -306,19 +306,6 @@ func (r *nativeRoom) drawTooSmall() {
 	os.Stdout.WriteString(out)
 }
 
-// seedEpoch derives a fixed virtual-clock start from the run seed, so the same
-// -seed always begins at the same instant. The year-2000 base keeps the value
-// human-readable in logs while staying well clear of the zero time.
-func seedEpoch(seed int64) time.Time {
-	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	// Spread by seed but keep it bounded and positive (mod a ~year of seconds).
-	off := seed % (365 * 24 * 3600)
-	if off < 0 {
-		off += 365 * 24 * 3600
-	}
-	return base.Add(time.Duration(off) * time.Second)
-}
-
 func (r *nativeRoom) Members() []Player  { return r.members }
 func (r *nativeRoom) Count() int         { return len(r.members) }
 func (r *nativeRoom) Config() RoomConfig { return r.cfg }
@@ -416,66 +403,5 @@ func (c nativeConfig) Get(_ context.Context, key string) ([]byte, bool, error) {
 	return []byte(v), true, nil
 }
 
-// frameToANSI is a minimal truecolor encoder for the dev runner (the arcade's
-// renderer of record lives host-side; this only needs to look right locally).
-func frameToANSI(f *Frame) string {
-	var b strings.Builder
-	b.Grow(Rows * Cols * 8)
-	for row := 0; row < Rows; row++ {
-		last := ""
-		for col := 0; col < Cols; col++ {
-			c := f.Cells[row][col]
-			if c.Cont {
-				continue
-			}
-			sgr := cellSGR(c)
-			if sgr != last {
-				b.WriteString(sgr)
-				last = sgr
-			}
-			ru := c.Rune
-			if ru == 0 || ru < 0x20 {
-				ru = ' '
-			}
-			b.WriteRune(ru)
-			// Burst the grapheme cluster's extra code points immediately after
-			// the base, before the next cell, so the terminal receives the
-			// cluster (base VS16 / base + keycap / base ZWJ piece) unbroken.
-			if c.Cp2 != 0 {
-				b.WriteRune(c.Cp2)
-				if c.Cp3 != 0 {
-					b.WriteRune(c.Cp3)
-				}
-			}
-		}
-		b.WriteString("\x1b[0m")
-		if row < Rows-1 {
-			b.WriteString("\r\n")
-		}
-	}
-	return b.String()
-}
-
-func cellSGR(c Cell) string {
-	var parts []string
-	parts = append(parts, "0")
-	if c.Attr&AttrBold != 0 {
-		parts = append(parts, "1")
-	}
-	if c.Attr&AttrDim != 0 {
-		parts = append(parts, "2")
-	}
-	if c.Attr&AttrUnderline != 0 {
-		parts = append(parts, "4")
-	}
-	if c.Attr&AttrReverse != 0 {
-		parts = append(parts, "7")
-	}
-	if c.FG.set {
-		parts = append(parts, fmt.Sprintf("38;2;%d;%d;%d", c.FG.r, c.FG.g, c.FG.b))
-	}
-	if c.BG.set {
-		parts = append(parts, fmt.Sprintf("48;2;%d;%d;%d", c.BG.r, c.BG.g, c.BG.b))
-	}
-	return "\x1b[" + strings.Join(parts, ";") + "m"
-}
+// frameToANSI lives in ansi.go: ANSIRows joined with CRLF for the raw-mode
+// terminal — the same encoder the smoke runner writes to shot files.

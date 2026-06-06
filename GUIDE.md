@@ -360,6 +360,66 @@ The native runner also rides terminal resizes: shrink the window below 80×24
 and it shows a "terminal too small" notice, then repaints your game the moment
 you grow it back — the same letterboxing the arcade does over SSH.
 
+## Smoke scripts: scripted screens
+
+Every catalog game ships a `smoke.yaml` next to its source: a small
+deterministic script that drives the game and dumps named 80×24 screens. The
+games repo CI runs it on every PR and posts the screens as a visual preview —
+and it's a handy inner-loop tool ("show me the reveal screen" without
+replaying the whole game by hand):
+
+```sh
+go run . -smoke smoke.yaml -smoke-out shots/   # native: no TinyGo needed
+shellcade-kit smoke .                          # the same script vs the real wasm
+```
+
+A script declares the deterministic inputs and the steps:
+
+```yaml
+seed: 42        # required — fixed RNG seed
+seats: 2        # required, 1..8 — all seats join before the first step
+heartbeat: 50ms # optional — wake cadence during `advance`
+config:         # optional — per-game config values
+  variant: classic
+steps:
+  - shot: lobby       # dump the current screen(s), named "lobby"
+  - rune: "5"         # printable rune → current seat
+  - key: enter        # enter/backspace/esc/tab/up/down/left/right/space
+  - text: "hello"     # sugar: one rune per character (typing games)
+  - seat: 1           # switch the current input seat (sticky hot-seat)
+  - advance: 1.5s     # sweep the virtual clock, one wake per heartbeat
+  - wake:             # a single wake without moving the clock
+  - shot: reveal
+    seats: [0, 1]     # optional filter; default = every seat
+```
+
+The room is fully virtual: the clock starts at a seed-derived epoch and moves
+**only** through `advance` (which wakes your game once per heartbeat — so
+`advance: 1.5s` at 50ms is exactly 30 wakes), and the RNG comes from `seed`.
+Two runs produce byte-identical shots; the wasm and native paths agree the
+same way `shellcade-kit check`'s determinism gate guarantees.
+
+Shots are per-seat (`01-lobby.seat0.ansi` + a plain-text `.txt` twin) and
+collapse to a single file when every seat sees the same screen — broadcast
+games never produce duplicates. `cat` an `.ansi` file to view it in your
+terminal.
+
+Authoring tips:
+
+- **Shoot quiescent or exact-tick moments.** Mid-animation screens are
+  deterministic too, but pick ticks that look intentional: land `advance` on
+  the frame you mean to show (reels stopped, card slid in, flash visible).
+- **Capture the moments a reviewer cares about**: the opening screen, a
+  mid-game state with real play on the board, and the payoff (win/reveal/
+  results) — three to six shots is plenty.
+- **Per-player games**: shoot after the moment views diverge (deal, bets,
+  reveal) so the preview shows what each seat sees.
+- `advance` must be a whole number of heartbeats — the parser rejects
+  ambiguous durations rather than rounding.
+
+The `smoke` package exposes the same machinery as Go API (`smoke.Parse`,
+`smoke.Run`, `smoke.RenderANSI`) if you want shots inside your own tests.
+
 ## The full loop
 
 | Stage | Command | What it proves |
