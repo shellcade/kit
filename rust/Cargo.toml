@@ -1,0 +1,42 @@
+# shellcade-kit — the Rust guest SDK for shellcade ABI v2.
+#
+# This crate is a plain rlib: the GAME crate is the cdylib leaf and carries the
+# size/panic [profile.release] block in its own manifest (Cargo applies
+# profiles only at the leaf crate, never from a dependency — the scaffolder
+# templates that block). The [profile.release] below applies only when this
+# crate is built as the root (its own CI test/smoke builds).
+#
+# Version lockstep: `version` below IS the kit version (single authority:
+# changesets → package.json; `npm run version` syncs it here). Authors consume
+# the crate as a git dependency pinned to the kit release tag:
+#
+#   [dependencies]
+#   shellcade-kit = { git = "https://github.com/shellcade/kit", tag = "vX.Y.Z" }
+
+[package]
+name = "shellcade-kit"
+version = "2.1.1"
+edition = "2021"
+# #[unsafe(no_mangle)] (emitted by shellcade_game! so expansions survive
+# edition-2024 game crates) stabilized in 1.82.
+rust-version = "1.82"
+publish = false
+description = "shellcade guest SDK: author wasm arcade games in Rust against ABI v2"
+license = "MIT"
+
+[lib]
+name = "shellcade_kit"
+# rlib only (the default) — see header comment.
+
+# extism-pdk supplies the kernel I/O plumbing (input/output regions, Memory
+# allocator) under wasm. Host functions are RAW wasm imports in src/host.rs —
+# never the PDK's #[host_fn] macro, which corrupts scalar args (ABI.md §7).
+# Off-wasm (cargo test) the transport is inert stubs + a scriptable test host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+extism-pdk = "1.4"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"

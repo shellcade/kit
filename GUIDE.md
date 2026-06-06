@@ -24,6 +24,10 @@ You're playing your game. Edit `main.go`, `go run .` again — the inner loop is
 a normal Go program (debugger, prints, sub-second builds). The wasm toolchain
 only enters when you want the real artifact.
 
+Prefer Rust? `shellcade-kit new --rust mygame` scaffolds the same game shape
+on the [Rust SDK](rust/README.md) — this guide's mental model carries over
+one-for-one (the Rust README has the Go↔Rust dictionary).
+
 ## The mental model
 
 A game is **a function from events to frames**. You implement six callbacks;

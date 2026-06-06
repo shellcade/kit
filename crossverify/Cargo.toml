@@ -7,9 +7,10 @@ publish = false
 # diff-rs — a standalone Rust reimplementation of the shellcade ABI v2 RUN-LIST
 # frame-delta encoder (24-byte grapheme cells, 9-byte epoch header, keyframe
 # form). Implemented from the v2 cell/container layout (kit/ABI.md v2 + the Go
-# reference at kit/internal/diffbench/encode.go) to (a) measure cross-language
-# difficulty of the v2 wire path and (b) be verified BYTE-IDENTICAL against the
-# Go reference encoder via committed golden vectors.
+# reference at kit/internal/diffbench/encode.go). The encoder now LIVES in the
+# SDK crate (kit/rust, shellcade_kit::delta); this crate is its verification
+# harness, binding it BYTE-IDENTICAL to the Go reference encoder via committed
+# golden vectors.
 #
 # This is a host-native library crate (NOT the wasm guest): `cargo test` builds
 # for the host so the unit + golden-vector tests run with the normal harness.
@@ -21,6 +22,9 @@ publish = false
 crate-type = ["lib"]
 
 [dependencies]
+# The encoder under verification: the SDK crate. This harness binds it
+# byte-identical to the Go reference via the committed golden vectors.
+shellcade-kit = { path = "../rust" }
 
 [profile.release]
 opt-level = 3
