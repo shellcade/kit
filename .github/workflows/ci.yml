@@ -74,6 +74,34 @@ jobs:
           ls -la cigame.wasm
           shellcade-kit check cigame.wasm
 
+  # Rust SDK: the shellcade-kit crate (rust/) and its golden-vector harness
+  # (crossverify/). Gates: unit tests, byte-identity with the Go reference
+  # encoder, a wasm32-wasip1 release build smoke of the crate, and the
+  # version lockstep (crate version == package.json version, kept in sync by
+  # scripts/sync-crate-version.mjs at `changeset version` time).
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-wasip1 }
+      - name: crate version == kit version (lockstep)
+        run: |
+          set -euo pipefail
+          kit_ver="$(node -p 'require("./package.json").version')"
+          crate_ver="$(grep -m1 '^version = ' rust/Cargo.toml | cut -d'"' -f2)"
+          if [ "${kit_ver}" != "${crate_ver}" ]; then
+            echo "version drift: package.json=${kit_ver} rust/Cargo.toml=${crate_ver}" >&2
+            echo "run: node scripts/sync-crate-version.mjs" >&2
+            exit 1
+          fi
+      - name: SDK tests
+        run: cargo test --manifest-path rust/Cargo.toml
+      - name: golden vectors (byte-identity vs the Go reference encoder)
+        run: cargo test --release --manifest-path crossverify/Cargo.toml
+      - name: wasm32-wasip1 release build smoke
+        run: cargo build --release --target wasm32-wasip1 --manifest-path rust/Cargo.toml
+
   # Slow path: the release profile (-opt=2) that ships. Only nightly and on
   # tags — it's the artifact authors submit, so keep it building, but don't
   # pay its cost on every PR. Mirrors the author journey, release build.

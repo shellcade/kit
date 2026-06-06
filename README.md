@@ -22,6 +22,8 @@ cd mygame && go mod tidy && go run .
 | `kit` (root) | the authoring surface: `Game`/`Handler`/`Room`, frames, controls |
 | `keyhold/`, `kittest/` | held-keys helper for action games; in-memory test double |
 | `wire/` | the ABI as code: version, names, packed payload codecs |
+| `rust/` | the [Rust guest SDK](rust/README.md) (`shellcade-kit new --rust`) |
+| `crossverify/` | golden vectors binding the Rust delta encoder byte-identical to Go's |
 | `ABI.md` / `GUIDE.md` | the normative contract / the authoring guide |
 
 For complete, published example games, see the

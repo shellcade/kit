@@ -4,7 +4,7 @@
   "private": true,
   "description": "Version management for the shellcade gamekit (Go module + CLI). Versions and changelogs are driven by changesets; binaries by GoReleaser.",
   "scripts": {
-    "version": "changeset version",
+    "version": "changeset version && node scripts/sync-crate-version.mjs",
     "release": "./scripts/tag-release.sh"
   },
   "devDependencies": {
