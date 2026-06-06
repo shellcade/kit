@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -97,13 +95,13 @@ func Main(g Game) {
 	}()
 	fmt.Print("\x1b[?1049h\x1b[?25l\x1b[2J")
 
-	// Measure the terminal up front and watch for resizes (SIGWINCH). An
-	// undersized terminal (<80x24) shows a "too small" notice instead of the
-	// game and resumes the moment it grows back.
+	// Measure the terminal up front and watch for resizes — SIGWINCH on Unix,
+	// a never-firing channel on Windows, which has no resize signal (see
+	// devrun_winch_*.go). An undersized terminal (<80x24) shows a "too small"
+	// notice instead of the game and resumes the moment it grows back.
 	r.measure(fd)
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	defer signal.Stop(winch)
+	winch, stopWinch := watchResize()
+	defer stopWinch()
 
 	h.OnStart(r)
 	for i, p := range players {
