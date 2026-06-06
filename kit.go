@@ -70,6 +70,8 @@ type (
 	MergeRule       = game.MergeRule
 	GameMeta        = game.GameMeta
 	LeaderboardSpec = game.LeaderboardSpec
+	ConfigKeySpec   = game.ConfigKeySpec
+	ConfigType      = game.ConfigType
 	Direction       = game.Direction
 	Aggregation     = game.Aggregation
 	MetricFormat    = game.MetricFormat
@@ -90,6 +92,11 @@ const (
 
 	HigherBetter = game.HigherBetter
 	LowerBetter  = game.LowerBetter
+
+	ConfigText   = game.ConfigText
+	ConfigNumber = game.ConfigNumber
+	ConfigBool   = game.ConfigBool
+	ConfigJSON   = game.ConfigJSON
 	BestResult   = game.BestResult
 	SumResults   = game.SumResults
 	Integer      = game.Integer

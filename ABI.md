@@ -129,10 +129,31 @@ str quickModeLabel · str soloModeLabel · str privateInviteLine   ("" = default
 u8  hasLeaderboard
   if 1: str metricLabel · u8 direction (0 higher · 1 lower)
         · u8 aggregation (0 best · 1 sum) · u8 format (0 int · 1 decimal · 2 duration)
+u16 configSpecCount                                              (trailing; see below)
+  per spec: str key · str title · str description
+            · u8 type (0 text · 1 number · 2 bool · 3 json)
+            · str default ("" = not declared) · str schema ("" = none; json only)
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
 cannot accept.
+
+**Config-spec section (minor addition).** The trailing config-spec section
+declares the game's admin-settable config keys (the ones it reads at runtime
+via `config_get`) so the platform's admin tools can render typed get/edit
+forms. It is **presence-guarded**: a payload that ends immediately after the
+leaderboard block is a valid pre-section meta with zero specs, and a host that
+predates the section ignores the trailing bytes (the trailing-bytes tolerance
+both sides already obey). Encoders that know the section always write it,
+count `0` when nothing is declared.
+
+Declared specs must satisfy: keys non-empty and unique; keys must NOT use the
+reserved `host.` prefix (those knobs are declared by the platform, never the
+game); `type` is one of the four assigned codes; `schema`, when non-empty, is
+allowed only on `json`-typed keys and must itself be well-formed JSON (it is
+intended to be a JSON Schema document — compilation and enforcement are a host
+concern). The Go SDK enforces these rules at `meta()` encode time, and
+`wire.ValidateConfigSpecs` is the shared rule set for decoders.
 
 ### 4.3 Frame (the delta container and its cell)
 

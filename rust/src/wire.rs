@@ -162,7 +162,51 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
             w.u8(lb.format as u8);
         }
     }
+    // Trailing config-spec section (ABI.md §4.2, spec minor): always written,
+    // count 0 when nothing is declared. Declarations are validated here so an
+    // authoring mistake fails loudly at meta() time — the same fail-fast
+    // posture as the Go SDK.
+    if let Err(e) = validate_config_specs(m.config) {
+        panic!("shellcade-kit: invalid Meta.config: {e}");
+    }
+    w.u16(m.config.len().min(0xffff) as u16);
+    for cs in m.config {
+        w.str(cs.key);
+        w.str(cs.title);
+        w.str(cs.description);
+        w.u8(cs.config_type as u8);
+        w.str(cs.default);
+        w.str(cs.schema);
+    }
     w.b
+}
+
+/// The authoring rules for declared config specs (ABI.md §4.2), mirroring Go's
+/// `wire.ValidateConfigSpecs`: keys non-empty and unique, no reserved `host.`
+/// prefix, and `schema` only on `Json`-typed keys where it must itself be
+/// well-formed JSON. (The type code is total by construction in Rust.)
+pub(crate) fn validate_config_specs(specs: &[crate::types::ConfigKeySpec]) -> Result<(), String> {
+    use crate::types::ConfigType;
+    for (i, cs) in specs.iter().enumerate() {
+        if cs.key.is_empty() {
+            return Err("config spec has an empty key".into());
+        }
+        if specs[..i].iter().any(|p| p.key == cs.key) {
+            return Err(format!("duplicate config spec key {:?}", cs.key));
+        }
+        if cs.key.starts_with("host.") {
+            return Err(format!("config spec key {:?} uses the reserved \"host.\" prefix", cs.key));
+        }
+        if !cs.schema.is_empty() {
+            if cs.config_type != ConfigType::Json {
+                return Err(format!("config spec {:?} declares a schema on a non-json type", cs.key));
+            }
+            if !crate::json::valid(cs.schema) {
+                return Err(format!("config spec {:?} schema is not valid JSON", cs.key));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---- Result (§4.4) -------------------------------------------------------------
@@ -275,6 +319,126 @@ mod tests {
         assert_eq!(r.u8(), 0); // BestResult
         assert_eq!(r.u8(), 2); // Duration
         assert!(!r.bad());
+    }
+
+    #[test]
+    fn meta_config_spec_wire_layout() {
+        use crate::types::{ConfigKeySpec, ConfigType};
+        let m = Meta {
+            slug: "g",
+            name: "G",
+            short_description: "d",
+            min_players: 1,
+            max_players: 4,
+            config: &[
+                ConfigKeySpec {
+                    key: "odds-variant",
+                    title: "Odds variant",
+                    description: "PAR sheet.",
+                    config_type: ConfigType::Json,
+                    default: r#"{"name":"Default"}"#,
+                    schema: r#"{"type":"object"}"#,
+                },
+                ConfigKeySpec { key: "motd", title: "Banner", config_type: ConfigType::Text, ..ConfigKeySpec::DEFAULT },
+            ],
+            ..Meta::DEFAULT
+        };
+        let b = encode_meta(&m);
+        let mut r = Rd::new(&b);
+        // Skip the pre-section fields.
+        for _ in 0..3 {
+            r.string();
+        }
+        r.u16();
+        r.u16();
+        assert_eq!(r.u16(), 0); // tags
+        for _ in 0..3 {
+            r.string();
+        }
+        assert_eq!(r.u8(), 0); // no leaderboard
+        // The trailing config-spec section.
+        assert_eq!(r.u16(), 2);
+        assert_eq!(r.string(), "odds-variant");
+        assert_eq!(r.string(), "Odds variant");
+        assert_eq!(r.string(), "PAR sheet.");
+        assert_eq!(r.u8(), 3); // Json
+        assert_eq!(r.string(), r#"{"name":"Default"}"#);
+        assert_eq!(r.string(), r#"{"type":"object"}"#);
+        assert_eq!(r.string(), "motd");
+        assert_eq!(r.string(), "Banner");
+        assert_eq!(r.string(), "");
+        assert_eq!(r.u8(), 0); // Text
+        assert_eq!(r.string(), "");
+        assert_eq!(r.string(), "");
+        assert!(!r.bad());
+    }
+
+    /// Byte-identity with the Go reference: the hex is the Go
+    /// `wire.EncodeMeta` output for this exact declaration (regenerate with a
+    /// throwaway Go test against kit/wire if the fixture changes).
+    #[test]
+    fn meta_config_spec_matches_go_golden() {
+        use crate::types::{ConfigKeySpec, ConfigType, Direction, MetricFormat};
+        let m = Meta {
+            slug: "golden",
+            name: "Golden",
+            short_description: "golden fixture",
+            min_players: 1,
+            max_players: 4,
+            tags: &["a", "b"],
+            leaderboard: Some(Leaderboard {
+                metric_label: "score",
+                direction: Direction::LowerBetter,
+                aggregation: crate::types::Aggregation::BestResult,
+                format: MetricFormat::Duration,
+            }),
+            config: &[
+                ConfigKeySpec {
+                    key: "odds-variant",
+                    title: "Odds variant",
+                    description: "PAR sheet.",
+                    config_type: ConfigType::Json,
+                    default: r#"{"name":"Default"}"#,
+                    schema: r#"{"type":"object"}"#,
+                },
+                ConfigKeySpec { key: "motd", title: "Banner", description: "Floor banner.", config_type: ConfigType::Text, ..ConfigKeySpec::DEFAULT },
+            ],
+            ..Meta::DEFAULT
+        };
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000";
+        let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
+    }
+
+    #[test]
+    fn config_spec_validation_rejects_authoring_mistakes() {
+        use crate::types::{ConfigKeySpec, ConfigType};
+        let cases: &[(&str, &[ConfigKeySpec])] = &[
+            ("empty key", &[ConfigKeySpec::DEFAULT]),
+            ("duplicate key", &[
+                ConfigKeySpec { key: "k", ..ConfigKeySpec::DEFAULT },
+                ConfigKeySpec { key: "k", ..ConfigKeySpec::DEFAULT },
+            ]),
+            ("reserved prefix", &[ConfigKeySpec { key: "host.heartbeat_ms", ..ConfigKeySpec::DEFAULT }]),
+            ("schema on non-json", &[ConfigKeySpec { key: "k", schema: "{}", ..ConfigKeySpec::DEFAULT }]),
+            ("schema not JSON", &[ConfigKeySpec {
+                key: "k",
+                config_type: ConfigType::Json,
+                schema: "{nope",
+                ..ConfigKeySpec::DEFAULT
+            }]),
+        ];
+        for (name, specs) in cases {
+            assert!(validate_config_specs(specs).is_err(), "want error: {name}");
+        }
+        assert!(validate_config_specs(&[]).is_ok());
+        assert!(validate_config_specs(&[ConfigKeySpec {
+            key: "odds-variant",
+            config_type: ConfigType::Json,
+            schema: r#"{"type":"object"}"#,
+            ..ConfigKeySpec::DEFAULT
+        }])
+        .is_ok());
     }
 
     #[test]

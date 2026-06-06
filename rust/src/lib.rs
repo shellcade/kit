@@ -64,6 +64,7 @@ mod broadcast;
 mod frame;
 mod host;
 mod input;
+mod json;
 mod rng;
 mod room;
 mod types;
@@ -87,8 +88,8 @@ pub use frame::{
 pub use input::{Action, Input, InputContext, Key};
 pub use room::Room;
 pub use types::{
-    Aggregation, Direction, Kind, Leaderboard, MergeRule, Meta, MetricFormat, Mode, Outcome,
-    Player, PlayerResult, RoomConfig, Status,
+    Aggregation, ConfigKeySpec, ConfigType, Direction, Kind, Leaderboard, MergeRule, Meta,
+    MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status,
 };
 
 // Native-only scriptable host double for `cargo test` of games and the SDK

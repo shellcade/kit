@@ -57,6 +57,23 @@ func encodeMeta(m GameMeta) []byte {
 		wm.Aggregation = uint8(m.Leaderboard.Aggregation)
 		wm.Format = uint8(m.Leaderboard.Format)
 	}
+	for _, cs := range m.Config {
+		wm.ConfigSpecs = append(wm.ConfigSpecs, wire.ConfigSpec{
+			Key:         cs.Key,
+			Title:       cs.Title,
+			Description: cs.Description,
+			Type:        uint8(cs.Type),
+			Default:     cs.Default,
+			Schema:      cs.Schema,
+		})
+	}
+	// Declared specs are validated here so an authoring mistake fails loudly
+	// at meta() time — surfaced by `shellcade-kit check`, the dev runner, and
+	// the host's load-time throwaway instance — same fail-fast posture as a
+	// compiled-in default that doesn't compile.
+	if err := wire.ValidateConfigSpecs(wm.ConfigSpecs); err != nil {
+		panic("kit: invalid GameMeta.Config: " + err.Error())
+	}
 	return wire.EncodeMeta(wm)
 }
 

@@ -136,6 +136,52 @@ pub struct Leaderboard {
     pub format: MetricFormat,
 }
 
+/// Config value type for a declared config key (wire codes; ABI.md §4.2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ConfigType {
+    /// Single-line string.
+    #[default]
+    Text,
+    /// Decimal number.
+    Number,
+    /// true/false.
+    Bool,
+    /// JSON document (multiline / rich-form editing).
+    Json,
+}
+
+/// One declared admin-settable config key (mirrors Go `ConfigKeySpec`): the
+/// keys the game reads via `Room::config` declared in [`Meta::config`] so the
+/// arcade's admin tools can render typed get/edit forms. Const-constructible
+/// via `..ConfigKeySpec::DEFAULT`.
+#[derive(Clone, Copy, Debug)]
+pub struct ConfigKeySpec {
+    /// The config key the game reads. Non-empty, unique, never `host.*`.
+    pub key: &'static str,
+    /// Short admin-facing label.
+    pub title: &'static str,
+    /// One or two sentences for the admin screen.
+    pub description: &'static str,
+    /// How the value is edited/validated (`type` on the wire).
+    pub config_type: ConfigType,
+    /// Value the game uses when unset (`""` = not declared).
+    pub default: &'static str,
+    /// JSON Schema document (`Json` keys only; `""` = none).
+    pub schema: &'static str,
+}
+
+impl ConfigKeySpec {
+    /// The all-defaults spec for `..ConfigKeySpec::DEFAULT` struct updates.
+    pub const DEFAULT: ConfigKeySpec = ConfigKeySpec {
+        key: "",
+        title: "",
+        description: "",
+        config_type: ConfigType::Text,
+        default: "",
+        schema: "",
+    };
+}
+
 /// Static game metadata (Go's `GameMeta`; the SDK owns the §4.2 serializer so
 /// authors never write positional codec calls). Const-constructible:
 ///
@@ -166,6 +212,10 @@ pub struct Meta {
     pub solo_mode_label: &'static str,
     pub private_invite_line: &'static str,
     pub leaderboard: Option<Leaderboard>,
+    /// Declared admin-settable config keys (`&[]` = none declared). Validated
+    /// at `meta()` encode time — an invalid declaration is an authoring bug
+    /// and panics there.
+    pub config: &'static [ConfigKeySpec],
 }
 
 impl Meta {
@@ -182,6 +232,7 @@ impl Meta {
         solo_mode_label: "",
         private_invite_line: "",
         leaderboard: None,
+        config: &[],
     };
 }
 

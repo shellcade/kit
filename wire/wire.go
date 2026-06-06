@@ -10,6 +10,7 @@ package wire
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -119,6 +120,30 @@ type Meta struct {
 	Direction      uint8
 	Aggregation    uint8
 	Format         uint8
+
+	// ConfigSpecs is the trailing config-spec section (spec minor addition):
+	// the game's declared admin-settable config keys. Encoders always write
+	// the section (count 0 when empty); decoders treat a payload ending after
+	// the leaderboard block as a valid pre-config meta with no specs.
+	ConfigSpecs []ConfigSpec
+}
+
+// Config value type codes (how the admin surface renders/validates a value).
+const (
+	ConfigText   uint8 = 0
+	ConfigNumber uint8 = 1
+	ConfigBool   uint8 = 2
+	ConfigJSON   uint8 = 3
+)
+
+// ConfigSpec is one declared admin-settable config key in the meta payload.
+type ConfigSpec struct {
+	Key         string // the config_get key the game reads
+	Title       string // short admin-facing label
+	Description string // one-or-two-sentence admin help
+	Type        uint8  // ConfigText..ConfigJSON
+	Default     string // value the game uses when unset ("" = not declared)
+	Schema      string // JSON Schema document (json type only; "" = none)
 }
 
 // Cell is one drawable cell of a frame. In v2 it carries up to three code
@@ -306,6 +331,18 @@ func EncodeMeta(m Meta) []byte {
 		w.U8(m.Aggregation)
 		w.U8(m.Format)
 	}
+	// Trailing config-spec section (spec minor addition). Always written, so
+	// a freshly encoded meta round-trips field-exact; decoders that predate
+	// the section ignore trailing bytes.
+	w.U16(uint16(len(m.ConfigSpecs)))
+	for _, cs := range m.ConfigSpecs {
+		w.Str(cs.Key)
+		w.Str(cs.Title)
+		w.Str(cs.Description)
+		w.U8(cs.Type)
+		w.Str(cs.Default)
+		w.Str(cs.Schema)
+	}
 	return w.B
 }
 
@@ -332,6 +369,21 @@ func DecodeMeta(b []byte) (Meta, error) {
 		m.Aggregation = r.U8()
 		m.Format = r.U8()
 	}
+	// Trailing config-spec section, presence-guarded: a payload that ends
+	// here is a valid pre-config meta with no declared specs.
+	if !r.Bad && r.Off < len(r.B) {
+		n := int(r.U16())
+		for i := 0; i < n && !r.Bad; i++ {
+			var cs ConfigSpec
+			cs.Key = r.Str()
+			cs.Title = r.Str()
+			cs.Description = r.Str()
+			cs.Type = r.U8()
+			cs.Default = r.Str()
+			cs.Schema = r.Str()
+			m.ConfigSpecs = append(m.ConfigSpecs, cs)
+		}
+	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err
 	}
@@ -339,6 +391,45 @@ func DecodeMeta(b []byte) (Meta, error) {
 		return Meta{}, errors.New("wire: meta has empty slug")
 	}
 	return m, nil
+}
+
+// HostKeyPrefix is the reserved config-key namespace interpreted by the host
+// (e.g. host.heartbeat_ms). Games MUST NOT declare specs under it — the
+// platform declares those knobs itself.
+const HostKeyPrefix = "host."
+
+// ValidateConfigSpecs enforces the authoring rules for declared config specs,
+// shared by guest SDK encoders and host/CLI decoders: keys non-empty and
+// unique, no reserved host. prefix, a known type code, and Schema only on
+// JSON-typed keys where it must itself parse as JSON. The JSON check is a
+// well-formedness scan (json.Valid) — schema COMPILATION is a host concern,
+// keeping this package dependency-free.
+func ValidateConfigSpecs(specs []ConfigSpec) error {
+	seen := make(map[string]bool, len(specs))
+	for _, cs := range specs {
+		if cs.Key == "" {
+			return errors.New("wire: config spec has an empty key")
+		}
+		if seen[cs.Key] {
+			return fmt.Errorf("wire: duplicate config spec key %q", cs.Key)
+		}
+		seen[cs.Key] = true
+		if len(cs.Key) >= len(HostKeyPrefix) && cs.Key[:len(HostKeyPrefix)] == HostKeyPrefix {
+			return fmt.Errorf("wire: config spec key %q uses the reserved %q prefix", cs.Key, HostKeyPrefix)
+		}
+		if cs.Type > ConfigJSON {
+			return fmt.Errorf("wire: config spec %q has unknown type %d", cs.Key, cs.Type)
+		}
+		if cs.Schema != "" {
+			if cs.Type != ConfigJSON {
+				return fmt.Errorf("wire: config spec %q declares a schema on a non-json type", cs.Key)
+			}
+			if !json.Valid([]byte(cs.Schema)) {
+				return fmt.Errorf("wire: config spec %q schema is not valid JSON", cs.Key)
+			}
+		}
+	}
+	return nil
 }
 
 // ---- Frames ----------------------------------------------------------------------
