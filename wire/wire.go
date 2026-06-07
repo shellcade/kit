@@ -257,6 +257,17 @@ func (r *Rd) Str() string {
 	return s
 }
 
+// SkipStr advances past one length-prefixed string without materializing it —
+// the allocation-free skim used by the SDK's roster cache to find the member
+// section's extent before deciding whether to decode it.
+func (r *Rd) SkipStr() {
+	n := int(r.U16())
+	if !r.ok(n) {
+		return
+	}
+	r.Off += n
+}
+
 // Err returns the decode error state.
 func (r *Rd) Err() error {
 	if r.Bad {

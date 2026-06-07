@@ -102,10 +102,19 @@ func (r *room) Identical(f *Frame) {
 		returned = uint32(hostIdentical(m.Offset()))
 		m.Free()
 	}
-	// Reconcile the broadcast slot and EVERY per-index baseline.
+	// Reconcile the broadcast slot and every ALLOCATED per-index baseline.
+	// Unallocated (never sent-to) slots are NOT allocated here — committing
+	// to all rosterCap slots would materialize the whole lazy table on the
+	// first broadcast. An unallocated slot is instead left not-present, so a
+	// later per-player Send to it opens with a keyframe (unconditionally
+	// accepted) — same recovery path as a roster change.
 	commitBaseline(broadcastSlot, packed, returned)
 	for i := 0; i < rosterCap; i++ {
-		commitBaseline(i, packed, returned)
+		if baselines[i] != nil {
+			commitBaseline(i, packed, returned)
+		} else {
+			baselinePresent[i] = false
+		}
 	}
 }
 

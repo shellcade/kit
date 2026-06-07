@@ -41,22 +41,23 @@ func ExportMeta() int32 {
 }
 
 // decodeCall decodes the input payload into a Room for this callback. It also
-// runs the roster-change backstop (D7): a cheap fixed-scratch fingerprint of the
-// roster is compared to the previous callback's; on any change (join/leave/
-// index-shift) every per-index baseline is invalidated so the next send to each
-// slot is a keyframe. This is the host-authority backstop, not the primary
-// resync (the host's epoch bump is) — but it keeps the guest's baselines from
-// diffing across a roster renumber.
+// runs the roster-change backstop (D7): decodeCtx's roster cache compares the
+// member section's raw wire bytes against the previous callback's; on any
+// change (join/leave/index-shift) every per-index baseline is invalidated so
+// the next send to each slot is a keyframe. This is the host-authority
+// backstop, not the primary resync (the host's epoch bump is) — but it keeps
+// the guest's baselines from diffing across a roster renumber. The byte
+// compare is strictly stronger than the fingerprint hash it replaced, and on
+// an unchanged roster the callback decodes ZERO member strings (allocation-
+// free — load-bearing under -gc=leaking, where per-callback roster decodes
+// leak at callback rate and OOM long-lived large rooms).
 func decodeCall() (*room, *wire.Rd) {
-	ctx, r := decodeCtx(inputBytes())
+	ctx, r, rosterChanged := decodeCtx(inputBytes())
 	if rng == nil {
 		rng = rand.New(rand.NewSource(ctx.cfg.Seed))
 	}
-	print := rosterFingerprint(ctx.members)
-	if !lastRosterSet || print != lastRosterPrint {
+	if rosterChanged {
 		invalidateBaselines()
-		lastRosterPrint = print
-		lastRosterSet = true
 	}
 	return &room{ctx: ctx, rng: rng}, r
 }
