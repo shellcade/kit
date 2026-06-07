@@ -161,6 +161,7 @@ u16 configSpecCount                                              (trailing; see 
             · str default ("" = not declared) · str schema ("" = none; json only)
 u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch
 u16 heartbeatMS       0 = no declaration
+u8  lifecycle         trailing (see below); 0 resumable · 1 ephemeral · 2 resident
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
@@ -195,6 +196,21 @@ and a `heartbeatMS` outside 0 ∪ [20, 1000] at `meta()` encode time. The host
 resolves the wake heartbeat at room creation as: admin `host.heartbeat_ms`
 config > declared `heartbeatMS` > platform default (50ms), clamped to
 [20ms, 1000ms] — a declaration is authoring intent, never authority.
+
+**Lifecycle byte (minor addition).** A trailing `u8` after the large-room
+section, presence-guarded under the same rules (absent = `0`): the room's
+end-of-life declaration. `0` resumable — hibernate on abandonment,
+player-driven resume (the historical behavior and the default). `1`
+ephemeral — after the abandonment grace the room ends and disposes: no
+snapshot, no resume entry (right for casual social rooms whose match has no
+meaning without its players). `2` resident — one long-lived room per slug;
+the declaration takes effect only when the platform grants it, and an
+ungranted declaration behaves as resumable. Hosts MUST treat lifecycle
+values they do not implement as resumable. SDKs reject undefined values and
+the resident + `minPlayers > 1` combination at `meta()` encode time (a
+resident room runs with zero members — see the zero-member wake rule in
+§4.1's roster-epoch notes; `start` precedes the first `join` universally,
+so an empty roster is already legal in every callback).
 
 ### 4.3 Frame (the delta container and its cell)
 

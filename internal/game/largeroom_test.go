@@ -107,4 +107,14 @@ func TestMetaTrailerEncode(t *testing.T) {
 	}
 	assertPanics("bad heartbeat", GameMeta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 2, HeartbeatMS: 5}, "HeartbeatMS")
 	assertPanics("unknown feature bit", GameMeta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 2, CtxFeatures: 1 << 9}, "undefined bit")
+	assertPanics("undefined lifecycle", GameMeta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 2, Lifecycle: 7}, "Lifecycle")
+	assertPanics("resident multi-floor", GameMeta{Slug: "g", Name: "G", MinPlayers: 2, MaxPlayers: 8, Lifecycle: LifecycleResident}, "zero members")
+}
+
+func TestLifecycleEncode(t *testing.T) {
+	b := encodeMeta(GameMeta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 8, Lifecycle: LifecycleEphemeral})
+	wm, err := wire.DecodeMeta(b)
+	if err != nil || wm.Lifecycle != wire.LifecycleEphemeral {
+		t.Fatalf("lifecycle encode: %v %d", err, wm.Lifecycle)
+	}
 }

@@ -196,7 +196,27 @@ type GameMeta struct {
 	// to its envelope and an admin config override always wins; out-of-range
 	// declarations are an authoring bug and panic at meta encode time.
 	HeartbeatMS int
+
+	// Lifecycle optionally declares the room's end-of-life shape. The zero
+	// value (LifecycleResumable) is today's behavior: hibernate on abandon,
+	// player-driven resume. LifecycleEphemeral ends and disposes the room
+	// after the abandon grace (no snapshot, no Resume entry) — right for
+	// casual social rooms. LifecycleResident declares one long-lived room
+	// per slug; it takes effect only when the platform grants it (an
+	// ungranted declaration behaves as resumable). Undefined values and
+	// resident-with-MinPlayers>1 are authoring bugs and panic at meta
+	// encode time.
+	Lifecycle Lifecycle
 }
+
+// Lifecycle is the room end-of-life declaration.
+type Lifecycle uint8
+
+const (
+	LifecycleResumable Lifecycle = Lifecycle(wire.LifecycleResumable)
+	LifecycleEphemeral Lifecycle = Lifecycle(wire.LifecycleEphemeral)
+	LifecycleResident  Lifecycle = Lifecycle(wire.LifecycleResident)
+)
 
 // CtxFeatRosterEpoch opts the game into the ctx roster-epoch encoding: the
 // host sends the full member list only when the roster changes (with an

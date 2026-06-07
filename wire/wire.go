@@ -168,7 +168,22 @@ type Meta struct {
 	// values.
 	CtxFeatures uint32
 	HeartbeatMS uint16
+
+	// Lifecycle is the room end-of-life declaration (spec minor addition;
+	// trailing byte after HeartbeatMS): 0 resumable (hibernate on abandon —
+	// today's behavior and the zero-value default), 1 ephemeral (end +
+	// dispose on abandon; no snapshot, no Resume entry), 2 resident (one
+	// long-lived granted room per slug). Hosts treat values they do not
+	// implement as resumable.
+	Lifecycle uint8
 }
+
+// Lifecycle values for the meta trailer.
+const (
+	LifecycleResumable uint8 = 0
+	LifecycleEphemeral uint8 = 1
+	LifecycleResident  uint8 = 2
+)
 
 // Config value type codes (how the admin surface renders/validates a value).
 const (
@@ -449,6 +464,9 @@ func EncodeMeta(m Meta) []byte {
 	// + declared heartbeat. Always written; older decoders ignore the bytes.
 	w.U32(m.CtxFeatures)
 	w.U16(m.HeartbeatMS)
+	// Trailing lifecycle byte (spec minor addition). Always written; older
+	// decoders ignore it.
+	w.U8(m.Lifecycle)
 	return w.B
 }
 
@@ -495,6 +513,10 @@ func DecodeMeta(b []byte) (Meta, error) {
 	if !r.Bad && r.Off < len(r.B) {
 		m.CtxFeatures = r.U32()
 		m.HeartbeatMS = r.U16()
+	}
+	// Trailing lifecycle byte, presence-guarded: absent = resumable.
+	if !r.Bad && r.Off < len(r.B) {
+		m.Lifecycle = r.U8()
 	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err
@@ -549,6 +571,20 @@ const (
 	HeartbeatMinMS uint16 = 20
 	HeartbeatMaxMS uint16 = 1000
 )
+
+// ValidateLifecycle is the shared authoring rule set for the lifecycle
+// declaration, enforced at meta() encode time by both SDKs: the value must
+// be a defined lifecycle, and resident cannot be combined with
+// minPlayers > 1 (a resident room runs with zero members).
+func ValidateLifecycle(lifecycle uint8, minPlayers uint16) error {
+	if lifecycle > LifecycleResident {
+		return fmt.Errorf("wire: Lifecycle %d undefined (0 resumable, 1 ephemeral, 2 resident)", lifecycle)
+	}
+	if lifecycle == LifecycleResident && minPlayers > 1 {
+		return fmt.Errorf("wire: Lifecycle resident cannot require MinPlayers %d — a resident room runs with zero members", minPlayers)
+	}
+	return nil
+}
 
 // ValidateMetaTrailer is the shared authoring rule set for the large-room
 // meta section, enforced at meta() encode time by both SDKs (the same

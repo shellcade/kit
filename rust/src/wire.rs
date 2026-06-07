@@ -219,6 +219,13 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
     }
     w.u32(m.ctx_features);
     w.u16(m.heartbeat_ms);
+    // Trailing lifecycle byte (ABI.md §4.2, spec minor). Always written;
+    // resident with min_players > 1 is an authoring bug (a resident room
+    // runs with zero members), mirroring Go's wire.ValidateLifecycle.
+    if m.lifecycle == crate::types::Lifecycle::Resident && m.min_players > 1 {
+        panic!("shellcade-kit: invalid Meta: lifecycle Resident cannot require min_players {}", m.min_players);
+    }
+    w.u8(m.lifecycle as u8);
     w.b
 }
 
@@ -463,7 +470,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e000000000000000000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -596,7 +603,7 @@ mod tests {
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         // trailer = u32 1 LE + u16 100 LE = "01000000" + "6400"
-        assert!(got.ends_with("0000010000006400"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-16..]);
+        assert!(got.ends_with("000001000000640000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-18..]);
     }
 }
 

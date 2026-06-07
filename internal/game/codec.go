@@ -178,6 +178,10 @@ func encodeMeta(m GameMeta) []byte {
 	if err := wire.ValidateMetaTrailer(wm.CtxFeatures, wm.HeartbeatMS); err != nil {
 		panic("kit: invalid GameMeta: " + err.Error())
 	}
+	wm.Lifecycle = uint8(m.Lifecycle)
+	if err := wire.ValidateLifecycle(wm.Lifecycle, wm.MinPlayers); err != nil {
+		panic("kit: invalid GameMeta: " + err.Error())
+	}
 	return wire.EncodeMeta(wm)
 }
 
