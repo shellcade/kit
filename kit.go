@@ -71,6 +71,7 @@ type (
 	GameMeta        = game.GameMeta
 	LeaderboardSpec = game.LeaderboardSpec
 	ConfigKeySpec   = game.ConfigKeySpec
+	Lifecycle       = game.Lifecycle
 	ConfigType      = game.ConfigType
 	Direction       = game.Direction
 	Aggregation     = game.Aggregation
@@ -94,6 +95,10 @@ const (
 	LowerBetter  = game.LowerBetter
 
 	CtxFeatRosterEpoch = game.CtxFeatRosterEpoch
+
+	LifecycleResumable = game.LifecycleResumable
+	LifecycleEphemeral = game.LifecycleEphemeral
+	LifecycleResident  = game.LifecycleResident
 
 	ConfigText   = game.ConfigText
 	ConfigNumber = game.ConfigNumber

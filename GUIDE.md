@@ -383,6 +383,30 @@ The native runner also rides terminal resizes: shrink the window below 80×24
 and it shows a "terminal too small" notice, then repaints your game the moment
 you grow it back — the same letterboxing the arcade does over SSH.
 
+## Choosing a lifecycle
+
+`GameMeta.Lifecycle` declares what happens to your room when everyone
+leaves:
+
+- **`LifecycleResumable`** (the default): the room hibernates and players
+  can resume it later from the lobby. Right for games where an interrupted
+  match is worth returning to — chess, anything with long-arc state.
+- **`LifecycleEphemeral`**: after the abandonment grace the room ends and
+  disposes — no snapshot, no resume entry. Right for casual social rooms
+  (slots, card tables, quick board games) where a match without its players
+  is meaningless. The grace still protects against connection blips: a
+  rejoin within it finds the room intact.
+- **`LifecycleResident`**: one long-lived room per slug — the persistent-
+  world shape. It keeps ticking with zero players, checkpoints
+  periodically, and survives deploys without anyone resuming it. Declaring
+  it is a REQUEST: the platform grants residency per slug (always-on
+  compute is an operator decision), and an ungranted declaration simply
+  behaves as resumable. Resident games must tolerate `r.Count() == 0` in
+  every callback (all games should — `OnStart` fires before the first
+  join), should idle-throttle expensive work when nobody is online, and
+  cannot declare `MinPlayers > 1`. Ending a resident room (`r.End`) is the
+  world-reset primitive: the next join creates a fresh world.
+
 ## Large rooms: 100+ players in one room
 
 The SDK supports rooms of up to 1024 players, but a large room only stays

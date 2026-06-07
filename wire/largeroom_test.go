@@ -115,14 +115,49 @@ func TestMetaTrailerRoundTrip(t *testing.T) {
 		t.Fatalf("trailer round-trip = features %#x heartbeat %d", got.CtxFeatures, got.HeartbeatMS)
 	}
 
-	// Pre-trailer payload: chop the trailing 6 bytes (u32 + u16).
-	old := b[:len(b)-6]
+	// Pre-large-room payload: chop the trailing 7 bytes (u32 + u16 + u8).
+	old := b[:len(b)-7]
 	got, err = DecodeMeta(old)
 	if err != nil {
 		t.Fatalf("pre-trailer decode: %v", err)
 	}
-	if got.CtxFeatures != 0 || got.HeartbeatMS != 0 {
-		t.Fatalf("pre-trailer payload decoded nonzero trailer: %#x %d", got.CtxFeatures, got.HeartbeatMS)
+	if got.CtxFeatures != 0 || got.HeartbeatMS != 0 || got.Lifecycle != LifecycleResumable {
+		t.Fatalf("pre-trailer payload decoded nonzero trailer: %#x %d %d", got.CtxFeatures, got.HeartbeatMS, got.Lifecycle)
+	}
+
+	// Pre-lifecycle payload (kit v2.6.0 era): chop only the lifecycle byte —
+	// the large-room section decodes, lifecycle defaults to resumable.
+	v26 := b[:len(b)-1]
+	got, err = DecodeMeta(v26)
+	if err != nil {
+		t.Fatalf("pre-lifecycle decode: %v", err)
+	}
+	if got.CtxFeatures != CtxFeatRosterEpoch || got.HeartbeatMS != 100 || got.Lifecycle != LifecycleResumable {
+		t.Fatalf("pre-lifecycle payload: %#x %d %d", got.CtxFeatures, got.HeartbeatMS, got.Lifecycle)
+	}
+}
+
+func TestLifecycleRoundTripAndValidation(t *testing.T) {
+	m := Meta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 8, Lifecycle: LifecycleEphemeral}
+	got, err := DecodeMeta(EncodeMeta(m))
+	if err != nil || got.Lifecycle != LifecycleEphemeral {
+		t.Fatalf("lifecycle round-trip: %v %d", err, got.Lifecycle)
+	}
+	cases := []struct {
+		lc   uint8
+		minP uint16
+		ok   bool
+	}{
+		{LifecycleResumable, 2, true},
+		{LifecycleEphemeral, 1, true},
+		{LifecycleResident, 1, true},
+		{LifecycleResident, 2, false}, // resident runs with zero members
+		{7, 1, false},                 // undefined value
+	}
+	for _, c := range cases {
+		if err := ValidateLifecycle(c.lc, c.minP); (err == nil) != c.ok {
+			t.Errorf("ValidateLifecycle(%d, %d) err=%v want ok=%v", c.lc, c.minP, err, c.ok)
+		}
 	}
 }
 

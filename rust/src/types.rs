@@ -226,6 +226,22 @@ pub struct Meta {
     /// host clamps to its envelope and an admin override always wins;
     /// out-of-range declarations panic at `meta()` encode time.
     pub heartbeat_ms: u16,
+
+    /// Room end-of-life declaration. `Resumable` (default) hibernates on
+    /// abandon; `Ephemeral` ends and disposes after the abandon grace (no
+    /// snapshot, no Resume entry); `Resident` declares one long-lived room
+    /// per slug (takes effect only when the platform grants it).
+    /// Resident with `min_players > 1` panics at `meta()` encode time.
+    pub lifecycle: Lifecycle,
+}
+
+/// Room end-of-life declaration (wire values 0/1/2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Lifecycle {
+    #[default]
+    Resumable = 0,
+    Ephemeral = 1,
+    Resident = 2,
 }
 
 /// Opts the game into the ctx roster-epoch encoding: the host sends the full
@@ -258,6 +274,7 @@ impl Meta {
         config: &[],
         ctx_features: 0,
         heartbeat_ms: 0,
+        lifecycle: Lifecycle::Resumable,
     };
 }
 
