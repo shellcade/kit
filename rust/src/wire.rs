@@ -87,14 +87,27 @@ impl<'a> Rd<'a> {
     }
 }
 
+// Ctx member-section sentinels (roster-epoch mode, ABI.md §4.1 minor): real
+// rosters are capped far below these values, so the count u16 disambiguates.
+pub(crate) const CTX_ROSTER_UNCHANGED: u16 = 0xFFFF;
+pub(crate) const CTX_ROSTER_FULL: u16 = 0xFFFE;
+
 // ---- CallContext (§4.1) ------------------------------------------------------
 
-/// The decoded per-callback room state.
+/// The decoded per-callback room state. `members` is shared with the SDK's
+/// roster cache (`Rc`): on the roster-epoch unchanged form the cached roster
+/// is reused with zero member allocations.
 pub(crate) struct CallCtx {
     pub now_unix_nanos: i64,
     pub cfg: RoomConfig,
-    pub members: Vec<Player>,
+    pub members: std::rc::Rc<Vec<Player>>,
     pub settled: bool,
+    /// Roster-epoch mode: the epoch carried by a sentinel-form member
+    /// section (None = legacy full-roster form).
+    pub roster_epoch: Option<u32>,
+    /// True when the sentinel said "unchanged" — `members` is left empty by
+    /// the decoder and the caller resolves it from the cache.
+    pub roster_unchanged: bool,
 }
 
 /// Decode the CallContext prefix and return it plus the reader positioned at
@@ -111,7 +124,36 @@ pub(crate) fn decode_ctx(input: &[u8]) -> (CallCtx, Rd<'_>) {
     };
     let capacity = r.u16() as usize;
     let min_players = r.u16() as usize;
-    let n = r.u16() as usize;
+    let count = r.u16();
+    let (members, roster_epoch, roster_unchanged) = match count {
+        CTX_ROSTER_UNCHANGED => {
+            // Sentinel: epoch only — the caller resolves members from the
+            // SDK roster cache (zero member allocations here).
+            let epoch = r.u32();
+            (Vec::new(), Some(epoch), true)
+        }
+        CTX_ROSTER_FULL => {
+            let epoch = r.u32();
+            let n = r.u16() as usize;
+            (decode_members(&mut r, n), Some(epoch), false)
+        }
+        n => (decode_members(&mut r, n as usize), None, false),
+    };
+    let settled = r.u8() != 0;
+    (
+        CallCtx {
+            now_unix_nanos: now,
+            cfg: RoomConfig { mode, capacity, min_players, seed, seed_set },
+            members: std::rc::Rc::new(members),
+            settled,
+            roster_epoch,
+            roster_unchanged,
+        },
+        r,
+    )
+}
+
+fn decode_members(r: &mut Rd<'_>, n: usize) -> Vec<Player> {
     let mut members = Vec::with_capacity(n.min(64));
     for _ in 0..n {
         let handle = r.string();
@@ -123,16 +165,7 @@ pub(crate) fn decode_ctx(input: &[u8]) -> (CallCtx, Rd<'_>) {
         }
         members.push(Player { handle, account_id, conn, kind });
     }
-    let settled = r.u8() != 0;
-    (
-        CallCtx {
-            now_unix_nanos: now,
-            cfg: RoomConfig { mode, capacity, min_players, seed, seed_set },
-            members,
-            settled,
-        },
-        r,
-    )
+    members
 }
 
 // ---- Meta (§4.2) ---------------------------------------------------------------
@@ -178,7 +211,32 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
         w.str(cs.default);
         w.str(cs.schema);
     }
+    // Trailing large-room section (ABI.md §4.2, spec minor): ctx-features
+    // bitset + declared heartbeat. Always written; validated here under the
+    // same fail-fast posture as config specs.
+    if let Err(e) = validate_meta_trailer(m.ctx_features, m.heartbeat_ms) {
+        panic!("shellcade-kit: invalid Meta: {e}");
+    }
+    w.u32(m.ctx_features);
+    w.u16(m.heartbeat_ms);
     w.b
+}
+
+/// The authoring rules for the large-room meta trailer, mirroring Go's
+/// `wire.ValidateMetaTrailer`: no undefined ctx-feature bits; heartbeat 0 or
+/// within the platform envelope.
+pub(crate) fn validate_meta_trailer(ctx_features: u32, heartbeat_ms: u16) -> Result<(), String> {
+    use crate::types::{HEARTBEAT_MAX_MS, HEARTBEAT_MIN_MS, KNOWN_CTX_FEATURES};
+    let unknown = ctx_features & !KNOWN_CTX_FEATURES;
+    if unknown != 0 {
+        return Err(format!("ctx_features declares undefined bit(s) {unknown:#x}"));
+    }
+    if heartbeat_ms != 0 && !(HEARTBEAT_MIN_MS..=HEARTBEAT_MAX_MS).contains(&heartbeat_ms) {
+        return Err(format!(
+            "heartbeat_ms {heartbeat_ms} outside 0 or [{HEARTBEAT_MIN_MS},{HEARTBEAT_MAX_MS}]"
+        ));
+    }
+    Ok(())
 }
 
 /// The authoring rules for declared config specs (ABI.md §4.2), mirroring Go's
@@ -405,7 +463,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -465,4 +523,80 @@ mod tests {
         assert_eq!(r.u16(), 2);
         assert_eq!(r.u8(), 1); // DNF
     }
+
+    /// Sentinel forms: full carries epoch + members; unchanged carries only
+    /// the epoch and leaves the reader at the event extras.
+    #[test]
+    fn ctx_sentinel_forms_decode() {
+        // Hand-build a full-form payload (host-side encoding lives in the
+        // engine; the bytes are pinned by ABI.md §4.1).
+        let mut w = Buf::new();
+        w.i64(9); // now
+        w.i64(7); // seed
+        w.u8(1); // seed_set
+        w.u8(0); // mode quick
+        w.u16(1000); // capacity
+        w.u16(1); // min players
+        w.u16(CTX_ROSTER_FULL);
+        w.u32(42); // epoch
+        w.u16(1); // real count
+        w.str("ada");
+        w.str("a");
+        w.str("c1");
+        w.u8(1); // kind member
+        w.u8(0); // settled
+        w.u8(0xAB); // event extra
+        let (ctx, mut r) = decode_ctx(&w.b);
+        assert_eq!(ctx.roster_epoch, Some(42));
+        assert!(!ctx.roster_unchanged);
+        assert_eq!(ctx.members.len(), 1);
+        assert_eq!(ctx.members[0].account_id, "a");
+        assert_eq!(r.u8(), 0xAB, "event extras misaligned");
+
+        let mut w = Buf::new();
+        w.i64(9);
+        w.i64(7);
+        w.u8(1);
+        w.u8(0);
+        w.u16(1000);
+        w.u16(1);
+        w.u16(CTX_ROSTER_UNCHANGED);
+        w.u32(43);
+        w.u8(0); // settled
+        w.u8(0xCD);
+        let (ctx, mut r) = decode_ctx(&w.b);
+        assert_eq!(ctx.roster_epoch, Some(43));
+        assert!(ctx.roster_unchanged);
+        assert!(ctx.members.is_empty());
+        assert_eq!(r.u8(), 0xCD, "event extras misaligned");
+    }
+
+    #[test]
+    fn meta_trailer_validation() {
+        assert!(validate_meta_trailer(0, 0).is_ok());
+        assert!(validate_meta_trailer(crate::types::CTX_FEAT_ROSTER_EPOCH, 100).is_ok());
+        assert!(validate_meta_trailer(1 << 9, 0).is_err(), "undefined bit");
+        assert!(validate_meta_trailer(0, 5).is_err(), "below envelope");
+        assert!(validate_meta_trailer(0, 1500).is_err(), "above envelope");
+    }
+
+    /// The large-room trailer golden: Go `wire.EncodeMeta` output for a meta
+    /// declaring the roster-epoch feature and a 100ms heartbeat.
+    #[test]
+    fn meta_trailer_matches_go_encoding() {
+        let m = Meta {
+            slug: "lr",
+            name: "LR",
+            short_description: "",
+            min_players: 1,
+            max_players: 1000,
+            ctx_features: crate::types::CTX_FEAT_ROSTER_EPOCH,
+            heartbeat_ms: 100,
+            ..Meta::DEFAULT
+        };
+        let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
+        // trailer = u32 1 LE + u16 100 LE = "01000000" + "6400"
+        assert!(got.ends_with("0000010000006400"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-16..]);
+    }
 }
+

@@ -34,6 +34,17 @@ func Main(g Game) {
 	flag.Var(cfgFlag(cfgVals), "config", "KEY=VALUE per-game config (repeatable; value may be @file)")
 	flag.Parse()
 
+	// Honor a meta-declared heartbeat unless -heartbeat was given explicitly,
+	// so authors experience their declared cadence locally (the host applies
+	// the same declaration with admin-config precedence in production).
+	if hb := g.Meta().HeartbeatMS; hb > 0 {
+		explicit := false
+		flag.Visit(func(f *flag.Flag) { explicit = explicit || f.Name == "heartbeat" })
+		if !explicit {
+			*heartbeat = time.Duration(hb) * time.Millisecond
+		}
+	}
+
 	// -seed makes the whole run reproducible: a fixed RNG seed AND a virtual
 	// clock (see below). Distinguish "flag given" from "left at default 0" so a
 	// deliberate -seed 0 still goes deterministic.

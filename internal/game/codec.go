@@ -40,6 +40,15 @@ type callContext struct {
 var (
 	rosterCache      []Player
 	rosterCacheBytes []byte
+
+	// Roster-epoch mode state (games declaring CtxFeatRosterEpoch): the epoch
+	// the cached roster was decoded at. epochMismatch flags a host-fault
+	// unchanged-form whose epoch didn't match the cache (decodeCall logs it);
+	// epochMismatchLogged keeps that warning to one line per instance.
+	rosterCacheEpoch    uint32
+	rosterCacheEpochSet bool
+	epochMismatch       bool
+	epochMismatchLogged bool
 )
 
 // decodeCtx decodes a CallContext and returns the reader positioned at the
@@ -54,45 +63,72 @@ func decodeCtx(b []byte) (callContext, *wire.Rd, bool) {
 	c.cfg.Capacity = int(r.U16())
 	c.cfg.MinPlayers = int(r.U16())
 
-	// Skim the member section (count + per-member strings) without decoding,
-	// to find its extent for the cache compare.
-	start := r.Off
-	n := int(r.U16())
-	for i := 0; i < n && !r.Bad; i++ {
-		r.SkipStr() // handle
-		r.SkipStr() // account id
-		r.SkipStr() // conn
-		r.U8()      // kind
-	}
-	region := r.B[start:r.Off]
-
-	changed := rosterCacheBytes == nil || !bytes.Equal(region, rosterCacheBytes)
-	if changed {
-		rr := &wire.Rd{B: region}
-		cnt := int(rr.U16())
-		rosterCache = rosterCache[:0]
-		for i := 0; i < cnt && !rr.Bad; i++ {
-			var p Player
-			p.Handle = rr.Str()
-			p.AccountID = rr.Str()
-			p.Conn = rr.Str()
-			p.Kind = Kind(rr.U8())
-			rosterCache = append(rosterCache, p)
+	count := r.U16()
+	var changed bool
+	switch count {
+	case wire.CtxRosterUnchanged:
+		// Roster-epoch sentinel: epoch only, no member data. Reuse the cache;
+		// an epoch mismatch is a host fault — degrade (keep the cache), the
+		// single warning is emitted by decodeCall, which has a Room to log on.
+		epoch := r.U32()
+		if !rosterCacheEpochSet || epoch != rosterCacheEpoch {
+			epochMismatch = true
+			changed = true // be conservative: invalidate baselines
 		}
-		if r.Bad {
-			// Malformed member section: don't prime the cache — every
-			// malformed callback stays "changed" and decodes what it can
-			// (the pre-cache behavior). A well-formed region is ≥2 bytes
-			// (the count), so a primed cache is never nil.
-			rosterCacheBytes = nil
-		} else {
-			rosterCacheBytes = append(rosterCacheBytes[:0], region...)
+	case wire.CtxRosterFull:
+		// Roster-epoch sentinel: full roster at an epoch. Authoritative.
+		epoch := r.U32()
+		decodeMembersInto(r, int(r.U16()))
+		rosterCacheEpoch = epoch
+		rosterCacheEpochSet = true
+		rosterCacheBytes = nil // bytes cache is legacy-mode state
+		changed = true
+	default:
+		// Legacy full roster (pre-feature hosts): skim the member section's
+		// extent without decoding, memcmp against the previous callback's
+		// bytes, and re-decode only on a real change.
+		start := r.Off - 2 // include the count in the compared region
+		for i := 0; i < int(count) && !r.Bad; i++ {
+			r.SkipStr() // handle
+			r.SkipStr() // account id
+			r.SkipStr() // conn
+			r.U8()      // kind
+		}
+		region := r.B[start:r.Off]
+		changed = rosterCacheBytes == nil || !bytes.Equal(region, rosterCacheBytes)
+		if changed {
+			rr := &wire.Rd{B: region}
+			decodeMembersInto(rr, int(rr.U16()))
+			if r.Bad {
+				// Malformed member section: don't prime the cache — every
+				// malformed callback stays "changed" and decodes what it can
+				// (the pre-cache behavior). A well-formed region is ≥2 bytes
+				// (the count), so a primed cache is never nil.
+				rosterCacheBytes = nil
+			} else {
+				rosterCacheBytes = append(rosterCacheBytes[:0], region...)
+			}
+			rosterCacheEpochSet = false // epoch state is sentinel-mode only
 		}
 	}
 	c.members = rosterCache
 
 	c.settled = r.Bool()
 	return c, r, changed
+}
+
+// decodeMembersInto re-decodes the member list into the shared rosterCache
+// backing array (the only place member strings are allocated).
+func decodeMembersInto(r *wire.Rd, n int) {
+	rosterCache = rosterCache[:0]
+	for i := 0; i < n && !r.Bad; i++ {
+		var p Player
+		p.Handle = r.Str()
+		p.AccountID = r.Str()
+		p.Conn = r.Str()
+		p.Kind = Kind(r.U8())
+		rosterCache = append(rosterCache, p)
+	}
 }
 
 // encodeMeta packs GameMeta for the meta export.
@@ -131,6 +167,16 @@ func encodeMeta(m GameMeta) []byte {
 	// compiled-in default that doesn't compile.
 	if err := wire.ValidateConfigSpecs(wm.ConfigSpecs); err != nil {
 		panic("kit: invalid GameMeta.Config: " + err.Error())
+	}
+	// Large-room trailer: ctx-feature bits + declared heartbeat, validated
+	// under the same fail-fast posture.
+	if m.HeartbeatMS < 0 || m.HeartbeatMS > 0xFFFF {
+		panic("kit: invalid GameMeta.HeartbeatMS: out of range")
+	}
+	wm.CtxFeatures = m.CtxFeatures
+	wm.HeartbeatMS = uint16(m.HeartbeatMS)
+	if err := wire.ValidateMetaTrailer(wm.CtxFeatures, wm.HeartbeatMS); err != nil {
+		panic("kit: invalid GameMeta: " + err.Error())
 	}
 	return wire.EncodeMeta(wm)
 }

@@ -119,6 +119,32 @@ u16 memberCount       on `leave`, includes the departed entry
 u8  settled           0/1
 ```
 
+**Roster-epoch member-section forms (minor addition).** For a guest whose
+meta declares `CtxFeatRosterEpoch` (§4.2), the host MAY replace the member
+section with one of two sentinel forms keyed on `memberCount` (real rosters
+are capped far below the sentinels, so the three forms are unambiguous):
+
+```
+memberCount 0x0000..0xFFFD   legacy full roster (exactly the layout above)
+memberCount 0xFFFE           full roster at an epoch:
+                               u32 rosterEpoch · u16 realCount · members as above
+memberCount 0xFFFF           roster unchanged since an epoch:
+                               u32 rosterEpoch   (no member data)
+```
+
+Lifecycle: the host holds a per-instance roster epoch, bumped on every roster
+mutation (join, leave, index shift). It sends the `0xFFFE` full form when the
+epoch differs from the last full form sent to THIS instance — which includes
+the **first callback after any instantiation or hibernation restore** (epoch
+state is ephemeral host memory, never snapshotted) — and the 6-byte `0xFFFF`
+unchanged form otherwise. The guest treats a full form as authoritative
+whenever received (re-cache, adopt the epoch); an unchanged form whose epoch
+differs from the guest's cached epoch is a host fault — the guest logs once,
+keeps its cached roster, and degrades (it must never trap on it). Guests that
+do not declare the feature receive ONLY the legacy form, byte-identical to
+prior revisions. The roster epoch and the frame-delta epoch (§4.6) are
+independent counters.
+
 ### 4.2 Meta
 
 ```
@@ -133,6 +159,8 @@ u16 configSpecCount                                              (trailing; see 
   per spec: str key · str title · str description
             · u8 type (0 text · 1 number · 2 bool · 3 json)
             · str default ("" = not declared) · str schema ("" = none; json only)
+u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch
+u16 heartbeatMS       0 = no declaration
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
@@ -154,6 +182,19 @@ allowed only on `json`-typed keys and must itself be well-formed JSON (it is
 intended to be a JSON Schema document — compilation and enforcement are a host
 concern). The Go SDK enforces these rules at `meta()` encode time, and
 `wire.ValidateConfigSpecs` is the shared rule set for decoders.
+
+**Large-room section (minor addition).** A second trailing section after the
+config-spec section: `u32 ctxFeatures` (a bitset of negotiated callback
+encodings; bit 0 = `CtxFeatRosterEpoch`, see §4.1) then `u16 heartbeatMS`
+(the game's preferred wake cadence; 0 = no declaration). Presence-guarded
+exactly like the config-spec section: a payload ending after the config-spec
+section is a valid older meta with zero values; older hosts ignore the
+trailing bytes; hosts ignore feature bits they do not implement. Encoders
+that know the section always write it. SDKs reject undefined feature bits
+and a `heartbeatMS` outside 0 ∪ [20, 1000] at `meta()` encode time. The host
+resolves the wake heartbeat at room creation as: admin `host.heartbeat_ms`
+config > declared `heartbeatMS` > platform default (50ms), clamped to
+[20ms, 1000ms] — a declaration is authoring intent, never authority.
 
 ### 4.3 Frame (the delta container and its cell)
 

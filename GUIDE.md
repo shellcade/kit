@@ -383,6 +383,55 @@ The native runner also rides terminal resizes: shrink the window below 80×24
 and it shows a "terminal too small" notice, then repaints your game the moment
 you grow it back — the same letterboxing the arcade does over SSH.
 
+## Large rooms: 100+ players in one room
+
+The SDK supports rooms of up to 1024 players, but a large room only stays
+inside the wake budget if the game follows three disciplines:
+
+**Declare your heartbeat.** A roguelike or board game does not need the 50ms
+default. Declare your real cadence and the platform honors it (an admin
+override always wins):
+
+```go
+func (Game) Meta() kit.GameMeta {
+    return kit.GameMeta{
+        // ...
+        HeartbeatMS: 100, // gentle tick: 10 wakes/sec
+    }
+}
+```
+
+**Declare the roster-epoch feature.** By default every callback payload
+carries the full member list. In a 1000-player room that is ~100KB per
+input; with the feature, an unchanged roster costs 6 bytes:
+
+```go
+CtxFeatures: kit.CtxFeatRosterEpoch,
+```
+
+The SDK handles the rest. One contract to know: the slice from
+`r.Members()` is valid for the duration of the callback — copy any `Player`
+you keep, and key long-lived state by `AccountID` (you already should).
+
+**Render on change, not on wake.** Composing and sending every player's
+frame on every wake is the single largest cost in a big room — and most
+frames are identical to the last. Track per-player dirtiness and skip clean
+viewports:
+
+- re-compose a player's view only when THEY moved, something moved within
+  their visible window, or their HUD line changed;
+- throttle ambient HUD clocks to ~1Hz — a per-wake counter in the HUD forces
+  a nonzero delta for every player on every wake, defeating the delta
+  encoder;
+- at typical input rates expect only ~10–30% of viewports dirty per tick —
+  a 3–10× cut in wake cost.
+
+The frame-delta layer already makes CLEAN-but-resent frames cheap on the
+wire; dirty tracking makes them free in CPU too. Allocation discipline
+matters as much as ever under `-gc=leaking`: compose into a reused
+`kit.Frame`, write cells directly, avoid per-player-per-wake string
+building.
+
 ## Smoke scripts: scripted screens
 
 Every catalog game ships a `smoke.yaml` next to its source: a small

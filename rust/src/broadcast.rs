@@ -15,9 +15,10 @@ use crate::rng::SplitMix64;
 use crate::types::Player;
 
 /// Fixed roster ceiling for per-index baselines. At 24-byte cells the table is
-/// (ROSTER_CAP + broadcast) × FRAME_BYTES ≈ 0.78 MB of linear memory, far
+/// Per-slot baselines are lazily allocated (~45 KiB per actively-sent-to
+/// consumer), so linear memory tracks the ACTIVE roster, not the cap — far
 /// under the 32 MiB cap.
-pub(crate) const ROSTER_CAP: usize = 16;
+pub(crate) const ROSTER_CAP: usize = 1024;
 /// The broadcast (`identical`) slot index within the baseline table.
 pub(crate) const BROADCAST_SLOT: usize = ROSTER_CAP;
 const SLOTS: usize = ROSTER_CAP + 1;
@@ -27,34 +28,38 @@ const SLOTS: usize = ROSTER_CAP + 1;
 /// `RefCell` (fully safe; wasm32-wasip1 is single-threaded and callbacks are
 /// serial per ABI §1 — a violation is a contained borrow panic, never UB).
 pub(crate) struct SdkState {
-    /// SLOTS × FRAME_BYTES, lazily allocated on the first send.
-    baselines: Vec<u8>,
-    epoch: [u32; SLOTS],
-    present: [bool; SLOTS],
+    /// Per-slot baselines (FRAME_BYTES each), lazily allocated on a slot's
+    /// first commit so memory tracks the active roster, not ROSTER_CAP.
+    baselines: Vec<Vec<u8>>,
+    epoch: Vec<u32>,
+    present: Vec<bool>,
     /// Reused pack scratch for the current frame (FRAME_BYTES).
     packed: Vec<u8>,
     /// Reused delta-container scratch (KEYFRAME_BYTES worst case).
     scratch: Vec<u8>,
     pub rng: Option<SplitMix64>,
     last_roster: Option<u64>,
+    /// Roster-epoch mode cache: the members decoded at the last full form,
+    /// shared into each callback's CallCtx with zero member allocations.
+    pub roster_cache: Option<(u32, std::rc::Rc<Vec<crate::types::Player>>)>,
 }
 
 impl SdkState {
     pub fn new() -> Self {
         SdkState {
-            baselines: Vec::new(),
-            epoch: [0; SLOTS],
-            present: [false; SLOTS],
+            baselines: vec![Vec::new(); SLOTS],
+            epoch: vec![0; SLOTS],
+            present: vec![false; SLOTS],
             packed: Vec::new(),
             scratch: Vec::new(),
             rng: None,
             last_roster: None,
+            roster_cache: None,
         }
     }
 
     fn ensure_buffers(&mut self) {
-        if self.baselines.is_empty() {
-            self.baselines = vec![0u8; SLOTS * FRAME_BYTES];
+        if self.packed.is_empty() {
             self.packed = vec![0u8; FRAME_BYTES];
             self.scratch = vec![0u8; KEYFRAME_BYTES];
         }
@@ -62,14 +67,14 @@ impl SdkState {
 
     #[cfg(test)]
     fn baseline(&self, slot: usize) -> &[u8] {
-        &self.baselines[slot * FRAME_BYTES..(slot + 1) * FRAME_BYTES]
+        &self.baselines[slot]
     }
 
     /// Clear every present flag, forcing the next send to each slot to a
     /// keyframe — called on any roster change (indices renumber; the host
     /// clears its caches and the guest mirrors).
     pub fn invalidate_baselines(&mut self) {
-        self.present = [false; SLOTS];
+        self.present.fill(false);
     }
 
     /// The roster-change backstop run at every callback decode: a cheap
@@ -102,9 +107,11 @@ impl SdkState {
 
         let sent_epoch = self.epoch[slot];
         let was_delta = self.present[slot];
-        let base = slot * FRAME_BYTES;
+        // present implies the slot buffer was allocated by a prior commit;
+        // the keyframe path never reads the baseline, so an empty slice is
+        // safe when !was_delta.
         let n = encode(
-            &self.baselines[base..base + FRAME_BYTES],
+            &self.baselines[slot],
             &self.packed,
             &mut self.scratch,
             sent_epoch,
@@ -116,7 +123,7 @@ impl SdkState {
             // Rejected delta (hibernation restore, baseline loss): resync to
             // the host's epoch and retry this same frame as a keyframe.
             let n = encode(
-                &self.baselines[base..base + FRAME_BYTES],
+                &self.baselines[slot],
                 &self.packed,
                 &mut self.scratch,
                 returned,
@@ -128,15 +135,25 @@ impl SdkState {
         // Adopt the baseline + epoch: the host now holds this exact frame.
         self.commit(slot, returned);
         if slot == BROADCAST_SLOT {
+            // Reconcile only ALLOCATED per-index slots — materializing all
+            // ROSTER_CAP would copy ~45 MiB per broadcast at cap 1024. A
+            // skipped slot stays not-present and recovers via its first
+            // per-player send opening with a keyframe (mirrors the host).
             for i in 0..ROSTER_CAP {
-                self.commit(i, returned);
+                if self.baselines[i].is_empty() {
+                    self.present[i] = false;
+                } else {
+                    self.commit(i, returned);
+                }
             }
         }
     }
 
     fn commit(&mut self, slot: usize, returned_epoch: u32) {
-        let base = slot * FRAME_BYTES;
-        self.baselines[base..base + FRAME_BYTES].copy_from_slice(&self.packed);
+        if self.baselines[slot].is_empty() {
+            self.baselines[slot] = vec![0u8; FRAME_BYTES];
+        }
+        self.baselines[slot].copy_from_slice(&self.packed);
         self.epoch[slot] = returned_epoch;
         self.present[slot] = true;
     }
@@ -250,12 +267,16 @@ mod tests {
         st.send_slot(0, &frame_with("p0 view"));
         st.send_slot(1, &frame_with("p1 view"));
 
-        // Broadcast: every per-index baseline must now equal the broadcast frame.
+        // Broadcast: every ALLOCATED per-index baseline must now equal the
+        // broadcast frame (lazy contract: never-sent slots are NOT
+        // materialized — they stay not-present and recover via their first
+        // per-player send opening with a keyframe, mirroring the host).
         st.send_slot(BROADCAST_SLOT, &frame_with("everyone"));
-        for slot in 0..ROSTER_CAP {
+        for slot in [0usize, 1] {
             assert!(st.slot_baseline_equals_packed(slot), "slot {slot} reconciled");
             assert!(st.slot_state(slot).1);
         }
+        assert!(!st.slot_state(2).1, "never-sent slot must stay not-present");
 
         // A per-player send after the broadcast diffs against the broadcast
         // frame: it must be a small delta, not a keyframe.

@@ -176,8 +176,10 @@ mod tests {
             ctx: CallCtx {
                 now_unix_nanos: 1,
                 cfg: RoomConfig { seed: 99, ..Default::default() },
-                members,
+                members: std::rc::Rc::new(members),
                 settled: false,
+                roster_epoch: None,
+                roster_unchanged: false,
             },
         }
     }

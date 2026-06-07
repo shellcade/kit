@@ -59,7 +59,15 @@ func decodeCall() (*room, *wire.Rd) {
 	if rosterChanged {
 		invalidateBaselines()
 	}
-	return &room{ctx: ctx, rng: rng}, r
+	rm := &room{ctx: ctx, rng: rng}
+	if epochMismatch && !epochMismatchLogged {
+		// Host fault: an unchanged-form ctx carried an epoch we don't hold.
+		// Degraded (cached roster kept, baselines invalidated) — warn once.
+		epochMismatchLogged = true
+		rm.Log("kit: ctx roster epoch mismatch (host fault); using cached roster")
+	}
+	epochMismatch = false
+	return rm, r
 }
 
 func decodePlayer(rm *room, r *wire.Rd) (Player, bool) {
