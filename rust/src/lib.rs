@@ -89,7 +89,7 @@ pub use input::{Action, Input, InputContext, Key};
 pub use room::Room;
 pub use types::{
     Aggregation, ConfigKeySpec, ConfigType, Direction, Kind, Leaderboard, MergeRule, Meta,
-    MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status,
+    MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status, CTX_FEAT_ROSTER_EPOCH,
 };
 
 // Native-only scriptable host double for `cargo test` of games and the SDK

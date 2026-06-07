@@ -101,7 +101,38 @@ type Ctx struct {
 	MinPlayers   uint16
 	Members      []Player
 	Settled      bool
+
+	// Roster-epoch mode (spec minor addition; emitted only to guests whose
+	// meta declares CtxFeatRosterEpoch). RosterEpochSet marks a sentinel-form
+	// member section: RosterUnchanged means the section carried only the
+	// epoch (Members is nil — the guest reuses its cached roster); otherwise
+	// Members is the full roster at RosterEpoch.
+	RosterEpoch     uint32
+	RosterEpochSet  bool
+	RosterUnchanged bool
 }
+
+// Ctx member-section sentinels (roster-epoch mode). Real rosters are capped
+// far below these values, so the count u16 disambiguates the three forms:
+// 0..CtxRosterMaxCount = legacy full roster (no epoch), CtxRosterFull = u32
+// epoch + u16 real count + members, CtxRosterUnchanged = u32 epoch only.
+const (
+	CtxRosterUnchanged uint16 = 0xFFFF
+	CtxRosterFull      uint16 = 0xFFFE
+	CtxRosterMaxCount  uint16 = 0xFFFD
+)
+
+// CtxFeatures bits a game may declare in its meta trailer. The host ignores
+// bits it does not implement; the SDKs reject bits they do not define.
+const (
+	// CtxFeatRosterEpoch opts the guest into the ctx member-section sentinel
+	// forms: full roster only on change (with an epoch), 6-byte unchanged
+	// sections otherwise.
+	CtxFeatRosterEpoch uint32 = 1 << 0
+
+	// KnownCtxFeatures is the mask of bits this wire revision defines.
+	KnownCtxFeatures uint32 = CtxFeatRosterEpoch
+)
 
 // Meta is the packed GameMeta.
 type Meta struct {
@@ -126,6 +157,17 @@ type Meta struct {
 	// the section (count 0 when empty); decoders treat a payload ending after
 	// the leaderboard block as a valid pre-config meta with no specs.
 	ConfigSpecs []ConfigSpec
+
+	// CtxFeatures + HeartbeatMS form the trailing large-room section (spec
+	// minor addition) after the config-spec section. CtxFeatures is the
+	// negotiated-encoding bitset (CtxFeat*); HeartbeatMS is the game's
+	// declared wake cadence (0 = no declaration; host precedence: admin
+	// config > declaration > platform default, clamped to the platform
+	// envelope). Encoders always write the section; decoders treat a payload
+	// ending after the config-spec section as a valid older meta with zero
+	// values.
+	CtxFeatures uint32
+	HeartbeatMS uint16
 }
 
 // Config value type codes (how the admin surface renders/validates a value).
@@ -278,25 +320,57 @@ func (r *Rd) Err() error {
 
 // ---- CallContext ---------------------------------------------------------------
 
-// EncodeCtx appends the packed CallContext to w.
+// EncodeCtx appends the packed CallContext to w in the LEGACY form (full
+// roster, no epoch) — the only form pre-roster-epoch guests understand, and
+// byte-identical to all prior wire revisions.
 func EncodeCtx(w *Buf, c Ctx) {
+	encodeCtxHeader(w, c)
+	w.U16(uint16(len(c.Members)))
+	encodeCtxMembers(w, c.Members)
+	w.Bool(c.Settled)
+}
+
+// EncodeCtxEpoch appends the packed CallContext in roster-epoch mode (only
+// for guests whose meta declares CtxFeatRosterEpoch). full=true emits the
+// CtxRosterFull sentinel (epoch + real count + members); full=false emits
+// the CtxRosterUnchanged sentinel (epoch only — the member section is 6
+// bytes regardless of roster size, and c.Members is not read).
+func EncodeCtxEpoch(w *Buf, c Ctx, epoch uint32, full bool) {
+	encodeCtxHeader(w, c)
+	if full {
+		w.U16(CtxRosterFull)
+		w.U32(epoch)
+		w.U16(uint16(len(c.Members)))
+		encodeCtxMembers(w, c.Members)
+	} else {
+		w.U16(CtxRosterUnchanged)
+		w.U32(epoch)
+	}
+	w.Bool(c.Settled)
+}
+
+func encodeCtxHeader(w *Buf, c Ctx) {
 	w.I64(c.NowUnixNanos)
 	w.I64(c.Seed)
 	w.Bool(c.SeedSet)
 	w.U8(c.Mode)
 	w.U16(c.Capacity)
 	w.U16(c.MinPlayers)
-	w.U16(uint16(len(c.Members)))
-	for _, p := range c.Members {
+}
+
+func encodeCtxMembers(w *Buf, members []Player) {
+	for _, p := range members {
 		w.Str(p.Handle)
 		w.Str(p.AccountID)
 		w.Str(p.Conn)
 		w.U8(p.Kind)
 	}
-	w.Bool(c.Settled)
 }
 
 // DecodeCtx reads a CallContext, leaving r positioned at the event extras.
+// It recognises all three member-section forms; on the unchanged sentinel
+// Members is nil and RosterUnchanged is true (the caller supplies its cached
+// roster).
 func DecodeCtx(r *Rd) Ctx {
 	var c Ctx
 	c.NowUnixNanos = r.I64()
@@ -305,17 +379,34 @@ func DecodeCtx(r *Rd) Ctx {
 	c.Mode = r.U8()
 	c.Capacity = r.U16()
 	c.MinPlayers = r.U16()
-	n := int(r.U16())
+	count := r.U16()
+	switch count {
+	case CtxRosterUnchanged:
+		c.RosterEpoch = r.U32()
+		c.RosterEpochSet = true
+		c.RosterUnchanged = true
+	case CtxRosterFull:
+		c.RosterEpoch = r.U32()
+		c.RosterEpochSet = true
+		c.Members = decodeCtxMembers(r, int(r.U16()))
+	default:
+		c.Members = decodeCtxMembers(r, int(count))
+	}
+	c.Settled = r.Bool()
+	return c
+}
+
+func decodeCtxMembers(r *Rd, n int) []Player {
+	var members []Player
 	for i := 0; i < n && !r.Bad; i++ {
 		var p Player
 		p.Handle = r.Str()
 		p.AccountID = r.Str()
 		p.Conn = r.Str()
 		p.Kind = r.U8()
-		c.Members = append(c.Members, p)
+		members = append(members, p)
 	}
-	c.Settled = r.Bool()
-	return c
+	return members
 }
 
 // ---- GameMeta -------------------------------------------------------------------
@@ -354,6 +445,10 @@ func EncodeMeta(m Meta) []byte {
 		w.Str(cs.Default)
 		w.Str(cs.Schema)
 	}
+	// Trailing large-room section (spec minor addition): ctx-features bitset
+	// + declared heartbeat. Always written; older decoders ignore the bytes.
+	w.U32(m.CtxFeatures)
+	w.U16(m.HeartbeatMS)
 	return w.B
 }
 
@@ -394,6 +489,12 @@ func DecodeMeta(b []byte) (Meta, error) {
 			cs.Schema = r.Str()
 			m.ConfigSpecs = append(m.ConfigSpecs, cs)
 		}
+	}
+	// Trailing large-room section, presence-guarded: a payload that ends
+	// here is a valid older meta declaring no ctx features and no heartbeat.
+	if !r.Bad && r.Off < len(r.B) {
+		m.CtxFeatures = r.U32()
+		m.HeartbeatMS = r.U16()
 	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err
@@ -439,6 +540,26 @@ func ValidateConfigSpecs(specs []ConfigSpec) error {
 				return fmt.Errorf("wire: config spec %q schema is not valid JSON", cs.Key)
 			}
 		}
+	}
+	return nil
+}
+
+// Heartbeat declaration envelope (mirrors the host's clamp range).
+const (
+	HeartbeatMinMS uint16 = 20
+	HeartbeatMaxMS uint16 = 1000
+)
+
+// ValidateMetaTrailer is the shared authoring rule set for the large-room
+// meta section, enforced at meta() encode time by both SDKs (the same
+// fail-fast posture as ValidateConfigSpecs): no undefined ctx-feature bits;
+// heartbeat 0 (no declaration) or within [HeartbeatMinMS, HeartbeatMaxMS].
+func ValidateMetaTrailer(ctxFeatures uint32, heartbeatMS uint16) error {
+	if unknown := ctxFeatures &^ KnownCtxFeatures; unknown != 0 {
+		return fmt.Errorf("wire: CtxFeatures declares undefined bit(s) %#x", unknown)
+	}
+	if heartbeatMS != 0 && (heartbeatMS < HeartbeatMinMS || heartbeatMS > HeartbeatMaxMS) {
+		return fmt.Errorf("wire: HeartbeatMS %d outside 0 or [%d,%d]", heartbeatMS, HeartbeatMinMS, HeartbeatMaxMS)
 	}
 	return nil
 }

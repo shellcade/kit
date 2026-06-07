@@ -216,7 +216,30 @@ pub struct Meta {
     /// at `meta()` encode time — an invalid declaration is an authoring bug
     /// and panics there.
     pub config: &'static [ConfigKeySpec],
+
+    /// Negotiated callback-encoding feature bits (`CTX_FEAT_*`; 0 = none,
+    /// today's behavior). Undefined bits are an authoring bug and panic at
+    /// `meta()` encode time.
+    pub ctx_features: u32,
+
+    /// Preferred wake cadence in milliseconds (0 = platform default). The
+    /// host clamps to its envelope and an admin override always wins;
+    /// out-of-range declarations panic at `meta()` encode time.
+    pub heartbeat_ms: u16,
 }
+
+/// Opts the game into the ctx roster-epoch encoding: the host sends the full
+/// member list only when the roster changes (with an epoch) and a 6-byte
+/// unchanged marker otherwise — the large-room callback path. Declare it in
+/// [`Meta::ctx_features`].
+pub const CTX_FEAT_ROSTER_EPOCH: u32 = 1 << 0;
+
+/// The feature bits this SDK revision defines.
+pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH;
+
+/// Heartbeat declaration envelope (mirrors the host clamp range).
+pub(crate) const HEARTBEAT_MIN_MS: u16 = 20;
+pub(crate) const HEARTBEAT_MAX_MS: u16 = 1000;
 
 impl Meta {
     /// The all-defaults Meta for `..Meta::DEFAULT` struct updates
@@ -233,6 +256,8 @@ impl Meta {
         private_invite_line: "",
         leaderboard: None,
         config: &[],
+        ctx_features: 0,
+        heartbeat_ms: 0,
     };
 }
 

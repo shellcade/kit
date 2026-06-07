@@ -27,15 +27,44 @@ pub const ABI_VERSION: u32 = 2;
 /// borrow panic, never UB).
 pub type HandlerCell = LocalKey<RefCell<Option<Box<dyn Handler>>>>;
 
-/// Decode a callback: CallContext + roster backstop + PRNG seeding.
+/// Decode a callback: CallContext + roster cache/backstop + PRNG seeding.
 fn decode_call(input: &[u8]) -> (Room, Rd<'_>) {
-    let (ctx, r) = decode_ctx(input);
+    let (mut ctx, r) = decode_ctx(input);
     STATE.with(|s| {
         let mut st = s.borrow_mut();
         if st.rng.is_none() {
             st.rng = Some(SplitMix64::new(ctx.cfg.seed));
         }
-        st.roster_gate(&ctx.members);
+        match ctx.roster_epoch {
+            Some(epoch) if ctx.roster_unchanged => {
+                // Roster-epoch unchanged form: reuse the cached members with
+                // zero allocations. An epoch mismatch is a host fault —
+                // degrade to the cached roster, warn once, force keyframes.
+                match &st.roster_cache {
+                    Some((cached, members)) if *cached == epoch => {
+                        ctx.members = std::rc::Rc::clone(members);
+                    }
+                    Some((_, members)) => {
+                        ctx.members = std::rc::Rc::clone(members);
+                        st.invalidate_baselines();
+                        crate::host::host_log(2, "kit: ctx roster epoch mismatch (host fault); using cached roster");
+                    }
+                    None => {
+                        st.invalidate_baselines();
+                        crate::host::host_log(2, "kit: unchanged roster before any full roster (host fault)");
+                    }
+                }
+            }
+            Some(epoch) => {
+                // Full form: authoritative — cache and invalidate baselines.
+                st.roster_cache = Some((epoch, std::rc::Rc::clone(&ctx.members)));
+                st.invalidate_baselines();
+            }
+            None => {
+                // Legacy form: the fingerprint backstop detects changes.
+                st.roster_gate(&ctx.members);
+            }
+        }
     });
     (Room { ctx }, r)
 }

@@ -7,6 +7,8 @@
 // eight //go:export trampolines (`shellcade-kit new` scaffolds exactly this).
 package game
 
+import "github.com/shellcade/kit/v2/wire"
+
 // ABIVersion is the ABI major version this SDK targets.
 const ABIVersion uint32 = 2
 
@@ -183,7 +185,24 @@ type GameMeta struct {
 	// generic editor still works). Declarations are validated at meta encode
 	// time — an invalid spec list is an authoring bug and panics there.
 	Config []ConfigKeySpec
+
+	// CtxFeatures optionally opts the game into negotiated callback
+	// encodings (the CtxFeat* bits; zero = none, today's behavior).
+	// Undefined bits are an authoring bug and panic at meta encode time.
+	CtxFeatures uint32
+
+	// HeartbeatMS optionally declares the game's preferred wake cadence in
+	// milliseconds. 0 = no declaration (platform default). The host clamps
+	// to its envelope and an admin config override always wins; out-of-range
+	// declarations are an authoring bug and panic at meta encode time.
+	HeartbeatMS int
 }
+
+// CtxFeatRosterEpoch opts the game into the ctx roster-epoch encoding: the
+// host sends the full member list only when the roster changes (with an
+// epoch), and a 6-byte unchanged marker otherwise — the large-room callback
+// path. Declare it in GameMeta.CtxFeatures.
+const CtxFeatRosterEpoch = wire.CtxFeatRosterEpoch
 
 // Status is a player's terminal outcome.
 type Status uint8

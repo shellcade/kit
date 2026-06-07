@@ -93,6 +93,8 @@ const (
 	HigherBetter = game.HigherBetter
 	LowerBetter  = game.LowerBetter
 
+	CtxFeatRosterEpoch = game.CtxFeatRosterEpoch
+
 	ConfigText   = game.ConfigText
 	ConfigNumber = game.ConfigNumber
 	ConfigBool   = game.ConfigBool
