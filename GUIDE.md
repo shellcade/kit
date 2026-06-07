@@ -426,6 +426,11 @@ viewports:
 - at typical input rates expect only ~10–30% of viewports dirty per tick —
   a 3–10× cut in wake cost.
 
+One trap: mark a player dirty on REJOIN (same account re-seating, including
+after a hibernation resume) — their frame baselines were invalidated, and a
+render-on-change game that skips them leaves the resumed session staring at
+nothing until something happens to move.
+
 The frame-delta layer already makes CLEAN-but-resent frames cheap on the
 wire; dirty tracking makes them free in CPU too. Allocation discipline
 matters as much as ever under `-gc=leaking`: compose into a reused
