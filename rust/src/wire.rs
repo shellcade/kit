@@ -170,6 +170,15 @@ fn decode_members(r: &mut Rd<'_>, n: usize) -> Vec<Player> {
 
 // ---- Meta (§4.2) ---------------------------------------------------------------
 
+/// The wire revision this SDK implements (ABI.md §5): a monotonic counter of
+/// wire-visible minor additions within the ABI major, stamped into the meta
+/// trailer so hosts can warn on or refuse artifacts built against a newer
+/// wire revision than they implement. The Rust mirror of Go's
+/// `wire.Revision` — one protocol constant, asserted equal in lockstep by
+/// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
+/// parses this source line; keep the declaration on one line).
+pub(crate) const WIRE_REVISION: u16 = 4;
+
 /// Pack a [`Meta`] for the `meta` export — the single SDK-owned serializer.
 pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
     let mut w = Buf::new();
@@ -226,6 +235,11 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
         panic!("shellcade-kit: invalid Meta: lifecycle Resident cannot require min_players {}", m.min_players);
     }
     w.u8(m.lifecycle as u8);
+    // Trailing wire-revision u16 (ABI.md §4.2, spec minor): the SDK stamps
+    // the revision it was built against — not author-settable; old hosts
+    // ignore the bytes, and the host uses it to warn on or refuse artifacts
+    // declaring a revision above its own.
+    w.u16(WIRE_REVISION);
     w.b
 }
 
@@ -383,6 +397,12 @@ mod tests {
         assert_eq!(r.u8(), 1); // LowerBetter
         assert_eq!(r.u8(), 0); // BestResult
         assert_eq!(r.u8(), 2); // Duration
+        // Trailing presence-guarded sections, always written by the encoder.
+        assert_eq!(r.u16(), 0); // config-spec count
+        assert_eq!(r.u32(), 0); // ctxFeatures
+        assert_eq!(r.u16(), 0); // heartbeatMS
+        assert_eq!(r.u8(), 0); // lifecycle Resumable
+        assert_eq!(r.u16(), WIRE_REVISION); // SDK-stamped wire revision
         assert!(!r.bad());
     }
 
@@ -470,7 +490,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e000000000000000000000000";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000400";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -602,8 +622,9 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE = "01000000" + "6400"
-        assert!(got.ends_with("000001000000640000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-18..]);
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 4 LE
+        //         = "01000000" + "6400" + "00" + "0400"
+        assert!(got.ends_with("0000010000006400000400"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
     }
 }
 

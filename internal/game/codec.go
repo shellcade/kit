@@ -182,6 +182,11 @@ func encodeMeta(m GameMeta) []byte {
 	if err := wire.ValidateLifecycle(wm.Lifecycle, wm.MinPlayers); err != nil {
 		panic("kit: invalid GameMeta: " + err.Error())
 	}
+	// Stamp the wire revision this kit was built against — not
+	// author-settable; the host uses it to warn on or refuse artifacts
+	// declaring a revision above its own (deploy-order enforcement and
+	// per-artifact provenance, ABI.md §4.2 / §5).
+	wm.WireRevision = wire.Revision
 	return wire.EncodeMeta(wm)
 }
 

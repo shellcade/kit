@@ -115,8 +115,9 @@ func TestMetaTrailerRoundTrip(t *testing.T) {
 		t.Fatalf("trailer round-trip = features %#x heartbeat %d", got.CtxFeatures, got.HeartbeatMS)
 	}
 
-	// Pre-large-room payload: chop the trailing 7 bytes (u32 + u16 + u8).
-	old := b[:len(b)-7]
+	// Pre-large-room payload: chop the trailing 9 bytes
+	// (u32 + u16 large-room, u8 lifecycle, u16 wireRevision).
+	old := b[:len(b)-9]
 	got, err = DecodeMeta(old)
 	if err != nil {
 		t.Fatalf("pre-trailer decode: %v", err)
@@ -125,15 +126,52 @@ func TestMetaTrailerRoundTrip(t *testing.T) {
 		t.Fatalf("pre-trailer payload decoded nonzero trailer: %#x %d %d", got.CtxFeatures, got.HeartbeatMS, got.Lifecycle)
 	}
 
-	// Pre-lifecycle payload (kit v2.6.0 era): chop only the lifecycle byte —
-	// the large-room section decodes, lifecycle defaults to resumable.
-	v26 := b[:len(b)-1]
+	// Pre-lifecycle payload (kit v2.6.0 era): chop the lifecycle byte and the
+	// wire-revision u16 — the large-room section decodes, lifecycle defaults
+	// to resumable.
+	v26 := b[:len(b)-3]
 	got, err = DecodeMeta(v26)
 	if err != nil {
 		t.Fatalf("pre-lifecycle decode: %v", err)
 	}
 	if got.CtxFeatures != CtxFeatRosterEpoch || got.HeartbeatMS != 100 || got.Lifecycle != LifecycleResumable {
 		t.Fatalf("pre-lifecycle payload: %#x %d %d", got.CtxFeatures, got.HeartbeatMS, got.Lifecycle)
+	}
+}
+
+// The wire-revision trailer: SDK-stamped values round-trip; a payload encoded
+// by a pre-revision kit (v2.7.x era — chop the trailing u16) decodes as 0 =
+// unknown; the bare wire encoder never stamps a revision on its own (the
+// field rides through verbatim, so re-encoding a decoded meta cannot
+// fabricate provenance).
+func TestMetaWireRevisionRoundTrip(t *testing.T) {
+	m := Meta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 8, WireRevision: Revision}
+	b := EncodeMeta(m)
+	got, err := DecodeMeta(b)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.WireRevision != Revision {
+		t.Fatalf("wire revision round-trip = %d, want %d", got.WireRevision, Revision)
+	}
+
+	// Pre-revision payload (kit v2.7.x era): chop the trailing u16.
+	v27 := b[:len(b)-2]
+	got, err = DecodeMeta(v27)
+	if err != nil {
+		t.Fatalf("pre-revision decode: %v", err)
+	}
+	if got.WireRevision != 0 {
+		t.Fatalf("pre-revision payload decoded revision %d, want 0", got.WireRevision)
+	}
+
+	// An unstamped meta declares 0 (unknown), never the package constant.
+	got, err = DecodeMeta(EncodeMeta(Meta{Slug: "g", Name: "G"}))
+	if err != nil {
+		t.Fatalf("unstamped decode: %v", err)
+	}
+	if got.WireRevision != 0 {
+		t.Fatalf("unstamped meta declared revision %d, want 0", got.WireRevision)
 	}
 }
 

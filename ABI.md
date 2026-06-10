@@ -170,6 +170,7 @@ u16 configSpecCount                                              (trailing; see 
 u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch
 u16 heartbeatMS       0 = no declaration
 u8  lifecycle         trailing (see below); 0 resumable · 1 ephemeral · 2 resident
+u16 wireRevision      trailing (see below); 0 = unknown (the meta predates the field)
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
@@ -219,6 +220,34 @@ the resident + `minPlayers > 1` combination at `meta()` encode time (a
 resident room runs with zero members — see the zero-member wake rule in
 §4.1's roster-epoch notes; `start` precedes the first `join` universally,
 so an empty roster is already legal in every callback).
+
+**Wire-revision field (minor addition).** A trailing `u16` after the
+lifecycle byte, presence-guarded under the same rules (absent = `0`): the
+**wire revision** of the kit the artifact was built against — a single
+monotonic counter of the wire-visible minor additions within an ABI major
+(§5), `wire.Revision` in code. It is stamped automatically by SDK encoders,
+never set by the author, and declares the newest wire feature the artifact
+may assume the host understands. The ledger so far: `1` config-spec section
+· `2` large-room section + roster-epoch sentinels · `3` lifecycle byte ·
+`4` this field itself. `0` means unknown: the meta predates the field
+(revisions 1–3 existed before it, so artifacts of those eras cannot declare
+them — only `0` or values ≥ `4` are ever observed). A hand-rolled guest
+(§4.7) SHOULD stamp the revision whose features it actually uses; omitting
+the field (= declaring `0`) is always safe but forfeits the skew protection
+below.
+
+Host semantics (normative): a host compares an artifact's declared revision
+against the revision it was itself built against. An artifact declaring a
+revision **at or below** the host's — or `0`, the legacy value — loads
+normally. An artifact declaring a revision **above** the host's MUST NOT be
+loaded blind: at publish/verify time the host SHOULD refuse it with a
+diagnostic naming both revisions (the author rebuilt against a newer kit
+than the host runs), and at catalog/boot load time it SHOULD skip the
+artifact with a warning rather than fail, so a fleet mid-upgrade self-heals
+once the lagging host catches up. This is the mechanical anchor for §5's
+deploy-order rule: without it a too-new artifact surfaces only as every
+delta container being rejected (a frozen screen), not as a diagnosable
+version skew.
 
 ### 4.3 Frame (the delta container and its cell)
 
@@ -464,7 +493,14 @@ following rules are normative:
    understands every feature of the kit version it was built against, and the
    host advertises nothing. That ordering is what lets a flag-gated feature ship
    as a minor — every prior host already rejected the flag while it was
-   unassigned — without resurrecting a capability gate.
+   unassigned — without resurrecting a capability gate. The rule is no longer
+   merely operational: the meta's trailing `wireRevision` (§4.2) is its
+   mechanical anchor. Every wire-visible minor addition appends an entry to the
+   `wire.Revision` ledger and bumps the constant **in the same change**; SDKs
+   stamp it into every artifact, and a host warns on or refuses (at verify
+   time) / skips (at load time) artifacts declaring a revision above its own —
+   so a violated deploy order degrades into a diagnosable, self-healing
+   per-artifact skip instead of a silently frozen room.
 
 Consciously rejected (so they are not relitigated): **>3 code points per cell**
 (family ZWJ emoji — the future path, if ever needed, is a flag-gated side table,
