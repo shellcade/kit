@@ -4,6 +4,8 @@ package game
 // outside the grid are clamped (never errored), and the packed frame encoding
 // preserves the canvas contract host-side.
 
+import "unicode/utf8"
+
 const (
 	Rows = 24
 	Cols = 80
@@ -225,7 +227,7 @@ func CharacterCell(c Character) Cell {
 	if c.Glyph == "" {
 		return Cell{Rune: ' '}
 	}
-	r := []rune(c.Glyph)[0]
+	r, _ := utf8.DecodeRuneInString(c.Glyph)
 	return Cell{
 		Rune: r,
 		FG:   RGB(c.InkR, c.InkG, c.InkB),

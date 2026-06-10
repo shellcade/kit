@@ -153,6 +153,23 @@ do not declare the feature receive ONLY the legacy form, byte-identical to
 prior revisions. The roster epoch and the frame-delta epoch (§4.6) are
 independent counters.
 
+**Per-member character section (minor addition).** For a guest whose meta
+declares `CtxFeatCharacter` (§4.2), every member entry — in BOTH
+member-bearing forms, the legacy full roster and the `0xFFFE` full-at-epoch
+form — carries immediately after its `u8 kind`:
+
+```
+str glyph · u8 inkR · u8 inkG · u8 inkB · u8 bgR · u8 bgG · u8 bgB · u8 asciiFallback
+```
+
+The `0xFFFF` unchanged sentinel carries no member data and therefore no
+character sections. Unlike the roster-epoch forms, which self-describe via
+the count u16's spare sentinel space, per-member trailing bytes have no
+in-band discriminator — the meta declaration is the entire negotiation, and
+the host MUST encode the section iff the guest declared the feature. Guests
+that do not declare `CtxFeatCharacter` receive encodings byte-identical to
+revision 4.
+
 ### 4.2 Meta
 
 ```
@@ -167,7 +184,7 @@ u16 configSpecCount                                              (trailing; see 
   per spec: str key · str title · str description
             · u8 type (0 text · 1 number · 2 bool · 3 json)
             · str default ("" = not declared) · str schema ("" = none; json only)
-u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch
+u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch · bit 1 = CtxFeatCharacter
 u16 heartbeatMS       0 = no declaration
 u8  lifecycle         trailing (see below); 0 resumable · 1 ephemeral · 2 resident
 u16 wireRevision      trailing (see below); 0 = unknown (the meta predates the field)
@@ -195,7 +212,8 @@ concern). The Go SDK enforces these rules at `meta()` encode time, and
 
 **Large-room section (minor addition).** A second trailing section after the
 config-spec section: `u32 ctxFeatures` (a bitset of negotiated callback
-encodings; bit 0 = `CtxFeatRosterEpoch`, see §4.1) then `u16 heartbeatMS`
+encodings; bit 0 = `CtxFeatRosterEpoch`, bit 1 = `CtxFeatCharacter`, see
+§4.1) then `u16 heartbeatMS`
 (the game's preferred wake cadence; 0 = no declaration). Presence-guarded
 exactly like the config-spec section: a payload ending after the config-spec
 section is a valid older meta with zero values; older hosts ignore the
@@ -205,6 +223,17 @@ and a `heartbeatMS` outside 0 ∪ [20, 1000] at `meta()` encode time. The host
 resolves the wake heartbeat at room creation as: admin `host.heartbeat_ms`
 config > declared `heartbeatMS` > platform default (50ms), clamped to
 [20ms, 1000ms] — a declaration is authoring intent, never authority.
+
+`CtxFeatCharacter` (`1<<1`) opts the guest into the per-member character
+section (§4.1): each roster entry carries the member's resolved arcade
+character. `glyph` is a single Unicode code point that renders at exactly one
+terminal cell — a game places it with zero width logic. The ink and
+background colours are already-resolved RGB triplets: the host applies any
+palette, theme, or unlock resolution before encoding, so the guest never
+interprets colour indirectly. `asciiFallback` is the single-byte stand-in the
+HOST substitutes for the glyph when a viewer's terminal cannot take UTF-8 —
+it rides along so the guest holds the complete character, but the degradation
+itself is a host-side rendering concern, never guest logic.
 
 **Lifecycle byte (minor addition).** A trailing `u8` after the large-room
 section, presence-guarded under the same rules (absent = `0`): the room's
@@ -229,7 +258,8 @@ monotonic counter of the wire-visible minor additions within an ABI major
 never set by the author, and declares the newest wire feature the artifact
 may assume the host understands. The ledger so far: `1` config-spec section
 · `2` large-room section + roster-epoch sentinels · `3` lifecycle byte ·
-`4` this field itself. `0` means unknown: the meta predates the field
+`4` this field itself · `5` per-member ctx character section behind
+`CtxFeatCharacter`. `0` means unknown: the meta predates the field
 (revisions 1–3 existed before it, so artifacts of those eras cannot declare
 them — only `0` or values ≥ `4` are ever observed). A hand-rolled guest
 (§4.7) SHOULD stamp the revision whose features it actually uses; omitting

@@ -1,0 +1,22 @@
+# Cross-language golden vectors for the per-member ctx character section
+# (CtxFeatCharacter, ABI.md §4.1), emitted by the Go reference encoders in
+# kit/wire (character_golden_test.go) and decoded by the Rust SDK. A Ctx is
+# host-encoded (host→guest only), so the Rust side asserts DECODE parity —
+# every field plus the reader position — and never encodes a Ctx of its own.
+#
+# DO NOT EDIT BY HAND. When the encoding legitimately changes, review the
+# wire-visible change, then regenerate and commit:
+#
+#   WIRE_SCALAR_GOLDEN_WRITE=1 go test -run TestCtxCharacterGoldenFresh ./wire/
+#
+# Format: one "name = hex" line per vector (the scalars.txt shape). Both
+# vectors carry the canonical two-member character roster (member "ana" with
+# glyph λ, guest "bob" with glyph @) and end with a trailing u32 event-extra
+# (7) standing in for the per-export trailing args.
+#
+#   ctx_character_legacy      EncodeCtxFeat — legacy full-roster form,
+#                             features = CtxFeatCharacter
+#   ctx_character_epoch_full  EncodeCtxEpochFeat — 0xFFFE full-at-epoch form,
+#                             epoch 42, features = CtxFeatCharacter|CtxFeatRosterEpoch
+ctx_character_legacy = 0900000000000000070000000000000001010400020002000300616e610300612d310300632d31010200cebb39ff142d1b4e4c0300626f620300612d320300632d3200010040010203040506400107000000
+ctx_character_epoch_full = 09000000000000000700000000000000010104000200feff2a00000002000300616e610300612d310300632d31010200cebb39ff142d1b4e4c0300626f620300612d320300632d3200010040010203040506400107000000
