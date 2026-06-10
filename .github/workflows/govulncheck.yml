@@ -1,0 +1,21 @@
+name: govulncheck
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nightly (07:30 UTC, after CI's cron): new vulns land in the Go vuln DB
+    # without any commit here, so a schedule — not just push/PR — is the gate
+    # that actually catches them.
+    - cron: "30 7 * * *"
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      # Deliberately unpinned: vuln scanning wants the current tool and the
+      # current database, unlike the reproducible build toolchain above.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
