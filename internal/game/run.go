@@ -21,7 +21,13 @@ var (
 )
 
 // Run installs the game. The instance's Handler is created lazily on start.
-func Run(g Game) { theGame = g }
+// The declared ctx features are captured here so the callback decoder reads
+// member sections with the shape the host encodes for this guest (the
+// character section carries no in-band discriminator).
+func Run(g Game) {
+	theGame = g
+	declaredCtxFeatures = g.Meta().CtxFeatures
+}
 
 // ExportABI backs the shellcade_abi export.
 func ExportABI() int32 {

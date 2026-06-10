@@ -14,6 +14,7 @@ func resetRosterState() {
 	rosterCacheEpochSet = false
 	epochMismatch = false
 	epochMismatchLogged = false
+	declaredCtxFeatures = 0
 }
 
 func epochCtxPayload(epoch uint32, full bool, members ...wire.Player) []byte {

@@ -20,12 +20,28 @@ const (
 	KindMember
 )
 
+// Character is a player's resolved arcade character (mirrors wire.Character):
+// a single width-1 glyph with ink/background colors and an ASCII fallback
+// codepoint. The zero value means "no character" — what every member carries
+// unless the game declares CtxFeatCharacter in GameMeta.CtxFeatures.
+type Character struct {
+	Glyph    string
+	InkR     uint8
+	InkG     uint8
+	InkB     uint8
+	BgR      uint8
+	BgG      uint8
+	BgB      uint8
+	Fallback uint8
+}
+
 // Player is a value-comparable membership token (mirrors native sdk.Player).
 type Player struct {
 	AccountID string
 	Handle    string
 	Kind      Kind
 	Conn      string
+	Character Character
 }
 
 // Guest reports whether the player is a keyless guest.
@@ -223,6 +239,13 @@ const (
 // epoch), and a 6-byte unchanged marker otherwise — the large-room callback
 // path. Declare it in GameMeta.CtxFeatures.
 const CtxFeatRosterEpoch = wire.CtxFeatRosterEpoch
+
+// CtxFeatCharacter opts the game into per-member character sections: the host
+// appends each member's resolved Character to every member-bearing roster
+// encoding, and the SDK populates Player.Character. Without the declaration
+// Player.Character is always the zero value. Declare it in
+// GameMeta.CtxFeatures.
+const CtxFeatCharacter = wire.CtxFeatCharacter
 
 // Status is a player's terminal outcome.
 type Status uint8

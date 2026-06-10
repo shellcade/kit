@@ -19,6 +19,7 @@ const ABIVersion = game.ABIVersion
 
 type (
 	Player       = game.Player
+	Character    = game.Character
 	Kind         = game.Kind
 	Input        = game.Input
 	InputKind    = game.InputKind
@@ -95,6 +96,7 @@ const (
 	LowerBetter  = game.LowerBetter
 
 	CtxFeatRosterEpoch = game.CtxFeatRosterEpoch
+	CtxFeatCharacter   = game.CtxFeatCharacter
 
 	LifecycleResumable = game.LifecycleResumable
 	LifecycleEphemeral = game.LifecycleEphemeral

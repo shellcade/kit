@@ -51,6 +51,13 @@ var (
 	epochMismatchLogged bool
 )
 
+// declaredCtxFeatures is the registered game's GameMeta.CtxFeatures, set by
+// Run. The host encodes per-member character sections iff the guest's meta
+// declares CtxFeatCharacter — there is no in-band discriminator — so the
+// decoder must know the declaration to read (and skim) the member section
+// with the right shape.
+var declaredCtxFeatures uint32
+
 // decodeCtx decodes a CallContext and returns the reader positioned at the
 // event-specific extra payload, plus whether the roster changed since the
 // previous callback (true on the first callback).
@@ -93,6 +100,16 @@ func decodeCtx(b []byte) (callContext, *wire.Rd, bool) {
 			r.SkipStr() // account id
 			r.SkipStr() // conn
 			r.U8()      // kind
+			if declaredCtxFeatures&wire.CtxFeatCharacter != 0 {
+				// Character section (host sends it iff our meta declares the
+				// feature): glyph str + 7 fixed bytes (ink RGB, bg RGB,
+				// fallback). The skim must skip EXACTLY what
+				// decodeMembersInto reads or the memcmp region misaligns.
+				r.SkipStr() // glyph
+				for j := 0; j < 7; j++ {
+					r.U8()
+				}
+			}
 		}
 		region := r.B[start:r.Off]
 		changed = rosterCacheBytes == nil || !bytes.Equal(region, rosterCacheBytes)
@@ -127,6 +144,16 @@ func decodeMembersInto(r *wire.Rd, n int) {
 		p.AccountID = r.Str()
 		p.Conn = r.Str()
 		p.Kind = Kind(r.U8())
+		if declaredCtxFeatures&wire.CtxFeatCharacter != 0 {
+			p.Character.Glyph = r.Str()
+			p.Character.InkR = r.U8()
+			p.Character.InkG = r.U8()
+			p.Character.InkB = r.U8()
+			p.Character.BgR = r.U8()
+			p.Character.BgG = r.U8()
+			p.Character.BgB = r.U8()
+			p.Character.Fallback = r.U8()
+		}
 		rosterCache = append(rosterCache, p)
 	}
 }
