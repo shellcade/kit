@@ -184,7 +184,11 @@ fn decode_members(r: &mut Rd<'_>, n: usize, features: u32) -> Vec<Player> {
             Character::default()
         };
         if r.bad() {
-            break; // degrade: keep what decoded cleanly
+            // Degrade: keep what decoded cleanly. Deliberate cross-language
+            // difference: Go appends the partially-read (zero-padded) member;
+            // this side drops it — both never deliver it (the dispatch layer
+            // gates on bad and drops the callback).
+            break;
         }
         members.push(Player { handle, account_id, conn, kind, character });
     }
@@ -395,6 +399,28 @@ mod tests {
         let full = ctx_payload(&[("alice", "acct-a", 1)], &[]);
         for n in 0..full.len() {
             let (_ctx, _r) = decode_ctx(&full[..n], 0); // must not panic
+        }
+        // A character-bearing payload decoded WITH the bit: the character
+        // section's reads must degrade at every truncation point too.
+        let mut w = Buf::new();
+        w.i64(9); // now
+        w.i64(7); // seed
+        w.u8(1); // seed_set
+        w.u8(0); // mode quick
+        w.u16(2); // capacity
+        w.u16(1); // min players
+        w.u16(1); // count
+        w.str("ana");
+        w.str("a-1");
+        w.str("c-1");
+        w.u8(1); // kind member
+        w.str("λ"); // glyph
+        for b in [1u8, 2, 3, 4, 5, 6, b'L'] {
+            w.u8(b); // ink RGB, bg RGB, fallback
+        }
+        w.u8(1); // settled
+        for n in 0..w.b.len() {
+            let (_ctx, _r) = decode_ctx(&w.b[..n], CTX_FEAT_CHARACTER); // must not panic
         }
     }
 

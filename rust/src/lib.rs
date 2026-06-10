@@ -102,6 +102,10 @@ pub use host::{reset_test_host, with_test_host, SentPayload, TestHost};
 /// The module entry: static metadata plus the per-room behavior factory
 /// (mirrors Go `kit.Game`).
 pub trait Game {
+    /// The game's static metadata. Must return a complete value: the SDK
+    /// reads it once per concern and caches what it needs (the first callback
+    /// captures [`Meta::ctx_features`] for every later decode) — the same
+    /// read-once contract as the Go kit's `Run`.
     fn meta(&self) -> Meta;
     fn new_room(&self, cfg: &RoomConfig) -> Box<dyn Handler>;
 }

@@ -8,7 +8,7 @@
 //! natively against the test host; the macro only generates the eight
 //! wasm-gated `#[unsafe(no_mangle)]` trampolines and the room cell.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::thread::LocalKey;
 
 use crate::host::{read_input, write_output};
@@ -26,6 +26,31 @@ pub const ABI_VERSION: u32 = 2;
 /// `RefCell` — fully safe; an ABI §1 serial-callback violation is a contained
 /// borrow panic, never UB).
 pub type HandlerCell = LocalKey<RefCell<Option<Box<dyn Handler>>>>;
+
+thread_local! {
+    /// The game's declared `Meta::ctx_features`, read ONCE from `Game::meta`
+    /// on the first callback and cached for the instance's life (the Rust
+    /// counterpart of Go's `Run` capturing `declaredCtxFeatures` at
+    /// registration). Every decode needs the bits — the host shapes the
+    /// member section by the declaration — and `wake` runs ~20×/sec, so
+    /// re-running the author's `meta()` per callback is not an option in the
+    /// allocation-free steady state.
+    static CTX_FEATURES: Cell<Option<u32>> = const { Cell::new(None) };
+}
+
+/// The cached declared feature bits, initialized from `game.meta()` on the
+/// first callback (whichever export that is — the host always starts first,
+/// but the cache does not depend on it).
+fn declared_ctx_features(game: &dyn Game) -> u32 {
+    CTX_FEATURES.with(|c| {
+        if let Some(f) = c.get() {
+            return f;
+        }
+        let f = game.meta().ctx_features;
+        c.set(Some(f));
+        f
+    })
+}
 
 /// Decode a callback: CallContext + roster cache/backstop + PRNG seeding.
 /// `features` is the registered game's declared `Meta::ctx_features` — the
@@ -112,7 +137,7 @@ pub fn meta(game: &dyn Game) -> i32 {
 
 pub fn start(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
+    let (mut room, _) = decode_call(&input, declared_ctx_features(game));
     let handler = game.new_room(&room.ctx.cfg);
     cell.with(|c| *c.borrow_mut() = Some(handler));
     with_handler(cell, |h| h.on_start(&mut room));
@@ -121,7 +146,7 @@ pub fn start(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
 
 pub fn join(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, mut r) = decode_call(&input, game.meta().ctx_features);
+    let (mut room, mut r) = decode_call(&input, declared_ctx_features(game));
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -131,7 +156,7 @@ pub fn join(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
 
 pub fn leave(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, mut r) = decode_call(&input, game.meta().ctx_features);
+    let (mut room, mut r) = decode_call(&input, declared_ctx_features(game));
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -141,7 +166,7 @@ pub fn leave(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
 
 pub fn input(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let bytes = read_input();
-    let (mut room, mut r) = decode_call(&bytes, game.meta().ctx_features);
+    let (mut room, mut r) = decode_call(&bytes, declared_ctx_features(game));
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -154,14 +179,14 @@ pub fn input(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
 
 pub fn wake(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
+    let (mut room, _) = decode_call(&input, declared_ctx_features(game));
     with_handler(cell, |h| h.on_wake(&mut room));
     0
 }
 
 pub fn close(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
+    let (mut room, _) = decode_call(&input, declared_ctx_features(game));
     with_handler(cell, |h| h.on_close(&mut room));
     0
 }
