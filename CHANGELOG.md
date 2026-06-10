@@ -1,5 +1,54 @@
 # kit
 
+## 2.8.0
+
+### Minor Changes
+
+- a0cefdf: `kittest.Room` gains an opt-in `KVUnavailable` chaos knob that replays the
+  production host's KV degradation exactly: while set, `Get` reports every key
+  as missing (`nil, false, nil`) and `Set`/`Delete` return `nil` without
+  persisting — the ABI has no error channel, so a real store outage never
+  surfaces a Go error. This lets authors test the read-absent-reinit hazard
+  (the natural `Get → missing → initialize → Set` wallet pattern silently
+  resets saved state during a store blip), previously impossible to simulate
+  because the double's KV always succeeded. GUIDE.md's Durable state section
+  now documents the degradation semantics and the conservative-missing-read
+  guidance, and `ExampleRoom_kvUnavailable` demonstrates the failing pattern.
+- a0cefdf: Wire-revision provenance: the packed Meta gains a trailing presence-guarded
+  `u16 wireRevision` — a single monotonic counter of wire-visible minor
+  additions (`wire.Revision`, currently 4; ledger in its docs and ABI.md §4.2),
+  stamped automatically by both the Go and Rust guest SDKs and never set by
+  the author. Old hosts ignore the bytes; artifacts built with older kits
+  decode as revision 0 (unknown). This gives the deploy-order rule (ABI.md §5)
+  its mechanical anchor: a host can now warn on or refuse artifacts declaring
+  a revision above the one it implements instead of loading them blind, and
+  record per-artifact contract provenance. Pure additive trailer following the
+  established pattern — ABI major stays 2. The Rust SDK's `WIRE_REVISION` is
+  pinned to `wire.Revision` by a new Go cross-check test
+  (`wire.TestRustWireRevisionMatchesWire`), and the Go/Rust meta goldens are
+  updated in lockstep.
+- a0cefdf: `wire.RosterCap` — the roster ceiling for per-index frame baselines (1024) is
+  now a contract constant in the `wire` package instead of a hand-mirrored
+  literal, and ABI.md §3 documents the bound. The Go guest SDK's internal
+  `rosterCap` adopts it directly; the Rust SDK's `ROSTER_CAP` is asserted equal
+  by a new Go cross-check test (`wire.TestRustRosterCapMatchesWire`, which
+  parses the Rust source so no Rust toolchain is needed). No encoding or
+  behavior change — purely promoting an existing protocol invariant into the
+  contract package both sides compile against.
+
+### Patch Changes
+
+- a0cefdf: The repo now ships an MIT `LICENSE` file at the root — `rust/Cargo.toml`
+  already declared `license = "MIT"`, but the module itself carried no license
+  text, leaving authors without usage terms. Doc consistency fixes ride along:
+  GUIDE.md now states the platform player bound explicitly as 1..1024
+  (`wire.RosterCap`) in both the Multiplayer and Large rooms sections, and the
+  smoke-script section documents that smoke scripts drive at most 8 seats (the
+  runner clamps `MinPlayers` to the seat count, so large-room games still pass;
+  large-room behavior is covered by `shellcade-kit check`'s budget gates). The
+  Rust README notes that the next shellcade-kit release makes `shellcade-kit
+play` accept a game directory and run the cargo wasm build itself.
+
 ## 2.7.0
 
 ### Minor Changes
