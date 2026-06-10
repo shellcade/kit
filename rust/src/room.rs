@@ -185,7 +185,7 @@ mod tests {
     }
 
     fn player(id: &str) -> Player {
-        Player { account_id: id.into(), handle: id.into(), conn: "c".into(), kind: Kind::Member }
+        Player { account_id: id.into(), handle: id.into(), conn: "c".into(), kind: Kind::Member, ..Player::default() }
     }
 
     #[test]

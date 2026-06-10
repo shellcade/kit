@@ -82,15 +82,15 @@ pub mod delta;
 pub mod __rt;
 
 pub use frame::{
-    Cell, Color, Frame, Style, ATTR_BOLD, ATTR_DIM, ATTR_REVERSE, ATTR_UNDERLINE, COLS, CYAN,
-    DIM_GRAY, GREEN, RED, ROWS, WHITE, YELLOW,
+    character_cell, Cell, Color, Frame, Style, ATTR_BOLD, ATTR_DIM, ATTR_REVERSE, ATTR_UNDERLINE,
+    COLS, CYAN, DIM_GRAY, GREEN, RED, ROWS, WHITE, YELLOW,
 };
 pub use input::{Action, Input, InputContext, Key};
 pub use room::Room;
 pub use types::{
-    Aggregation, ConfigKeySpec, ConfigType, Direction, Kind, Leaderboard, MergeRule, Meta,
-    MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status, CTX_FEAT_CHARACTER,
-    CTX_FEAT_ROSTER_EPOCH, Lifecycle,
+    Aggregation, Character, ConfigKeySpec, ConfigType, Direction, Kind, Leaderboard, MergeRule,
+    Meta, MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status,
+    CTX_FEAT_CHARACTER, CTX_FEAT_ROSTER_EPOCH, Lifecycle,
 };
 
 // Native-only scriptable host double for `cargo test` of games and the SDK
@@ -123,10 +123,10 @@ pub trait Handler {
 /// Everything a game file needs: `use shellcade_kit::prelude::*;`
 pub mod prelude {
     pub use crate::{
-        Action, Aggregation, Cell, Color, Direction, Frame, Game, Handler, Input, InputContext,
-        Key, Kind, Leaderboard, MergeRule, Meta, MetricFormat, Mode, Outcome, Player,
-        PlayerResult, Room, RoomConfig, Status, Style, ATTR_BOLD, ATTR_DIM, ATTR_REVERSE,
-        ATTR_UNDERLINE, COLS, CYAN, DIM_GRAY, GREEN, RED, ROWS, WHITE, YELLOW,
+        character_cell, Action, Aggregation, Cell, Character, Color, Direction, Frame, Game,
+        Handler, Input, InputContext, Key, Kind, Leaderboard, MergeRule, Meta, MetricFormat, Mode,
+        Outcome, Player, PlayerResult, Room, RoomConfig, Status, Style, ATTR_BOLD, ATTR_DIM,
+        ATTR_REVERSE, ATTR_UNDERLINE, COLS, CYAN, DIM_GRAY, GREEN, RED, ROWS, WHITE, YELLOW,
     };
 }
 
@@ -177,23 +177,23 @@ macro_rules! shellcade_game {
             }
             #[unsafe(no_mangle)]
             extern "C" fn join() -> i32 {
-                $crate::__rt::join(&__SHELLCADE_HANDLER)
+                $crate::__rt::join(&__SHELLCADE_HANDLER, &$game)
             }
             #[unsafe(no_mangle)]
             extern "C" fn leave() -> i32 {
-                $crate::__rt::leave(&__SHELLCADE_HANDLER)
+                $crate::__rt::leave(&__SHELLCADE_HANDLER, &$game)
             }
             #[unsafe(no_mangle)]
             extern "C" fn input() -> i32 {
-                $crate::__rt::input(&__SHELLCADE_HANDLER)
+                $crate::__rt::input(&__SHELLCADE_HANDLER, &$game)
             }
             #[unsafe(no_mangle)]
             extern "C" fn wake() -> i32 {
-                $crate::__rt::wake(&__SHELLCADE_HANDLER)
+                $crate::__rt::wake(&__SHELLCADE_HANDLER, &$game)
             }
             #[unsafe(no_mangle)]
             extern "C" fn close() -> i32 {
-                $crate::__rt::close(&__SHELLCADE_HANDLER)
+                $crate::__rt::close(&__SHELLCADE_HANDLER, &$game)
             }
         };
     };

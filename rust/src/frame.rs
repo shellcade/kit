@@ -13,6 +13,8 @@
 //! byte-identity). `pack_into` is the normative enforcer — it always writes
 //! pad = 0, and an unset color always packs as four zero bytes.
 
+use crate::types::Character;
+
 /// Grid height in rows. Signed so coordinate math (centering, right-aligning)
 /// never fights sign conversions; negative intermediate columns are legal and
 /// clamp away.
@@ -268,6 +270,25 @@ impl Default for Frame {
     }
 }
 
+/// The one ready-made cell of a member's character tile: the glyph styled
+/// with the resolved ink and background (player-character capability,
+/// shellcade — every catalogue glyph is width 1, so games place a character
+/// with zero width logic). The default [`Character`] (the game's meta does
+/// not declare [`CTX_FEAT_CHARACTER`]) yields a blank cell.
+///
+/// [`CTX_FEAT_CHARACTER`]: crate::types::CTX_FEAT_CHARACTER
+pub fn character_cell(c: &Character) -> Cell {
+    let Some(rune) = c.glyph.chars().next() else {
+        return Cell::blank();
+    };
+    Cell {
+        rune,
+        fg: Color::rgb(c.ink_r, c.ink_g, c.ink_b),
+        bg: Color::rgb(c.bg_r, c.bg_g, c.bg_b),
+        ..Cell::blank()
+    }
+}
+
 fn pack_color(dst: &mut [u8], c: Color) {
     if c.is_set() {
         let (r, g, b) = c.rgb_vals();
@@ -359,6 +380,40 @@ mod tests {
         f.text_right(2, COLS - 1, "hi", Style::default());
         assert_eq!(f.get(2, COLS - 2).rune, 'h');
         assert_eq!(f.get(2, COLS - 1).rune, 'i');
+    }
+
+    /// character_cell turns a character into one styled, ready-to-place cell;
+    /// the default Character (feature not declared) yields a blank.
+    #[test]
+    fn character_cell_styles_the_glyph() {
+        let c = Character {
+            glyph: "λ".into(),
+            ink_r: 0x39,
+            ink_g: 0xFF,
+            ink_b: 0x14,
+            bg_r: 0x2D,
+            bg_g: 0x1B,
+            bg_b: 0x4E,
+            fallback: b'L',
+        };
+        let cell = character_cell(&c);
+        assert_eq!(cell.rune, 'λ');
+        assert_eq!(cell.fg, Color::rgb(0x39, 0xFF, 0x14));
+        assert_eq!(cell.bg, Color::rgb(0x2D, 0x1B, 0x4E));
+        assert_eq!((cell.cp2, cell.cp3), ('\0', '\0'));
+        assert_eq!(cell.attr, 0);
+        assert!(!cell.cont);
+    }
+
+    #[test]
+    fn character_cell_default_is_blank() {
+        let blank = character_cell(&Character::default());
+        assert_eq!(blank.rune, ' ');
+        assert!(!blank.fg.is_set());
+        assert!(!blank.bg.is_set());
+        assert_eq!((blank.cp2, blank.cp3), ('\0', '\0'));
+        assert_eq!(blank.attr, 0);
+        assert!(!blank.cont);
     }
 
     #[test]

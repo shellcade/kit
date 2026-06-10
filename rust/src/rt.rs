@@ -28,8 +28,11 @@ pub const ABI_VERSION: u32 = 2;
 pub type HandlerCell = LocalKey<RefCell<Option<Box<dyn Handler>>>>;
 
 /// Decode a callback: CallContext + roster cache/backstop + PRNG seeding.
-fn decode_call(input: &[u8]) -> (Room, Rd<'_>) {
-    let (mut ctx, r) = decode_ctx(input);
+/// `features` is the registered game's declared `Meta::ctx_features` — the
+/// host shapes the member section by that declaration (per-member character
+/// sections iff `CTX_FEAT_CHARACTER`), so the decoder must know it.
+fn decode_call(input: &[u8], features: u32) -> (Room, Rd<'_>) {
+    let (mut ctx, r) = decode_ctx(input, features);
     STATE.with(|s| {
         let mut st = s.borrow_mut();
         if st.rng.is_none() {
@@ -109,16 +112,16 @@ pub fn meta(game: &dyn Game) -> i32 {
 
 pub fn start(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input);
+    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
     let handler = game.new_room(&room.ctx.cfg);
     cell.with(|c| *c.borrow_mut() = Some(handler));
     with_handler(cell, |h| h.on_start(&mut room));
     0
 }
 
-pub fn join(cell: &'static HandlerCell) -> i32 {
+pub fn join(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, mut r) = decode_call(&input);
+    let (mut room, mut r) = decode_call(&input, game.meta().ctx_features);
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -126,9 +129,9 @@ pub fn join(cell: &'static HandlerCell) -> i32 {
     0
 }
 
-pub fn leave(cell: &'static HandlerCell) -> i32 {
+pub fn leave(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, mut r) = decode_call(&input);
+    let (mut room, mut r) = decode_call(&input, game.meta().ctx_features);
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -136,9 +139,9 @@ pub fn leave(cell: &'static HandlerCell) -> i32 {
     0
 }
 
-pub fn input(cell: &'static HandlerCell) -> i32 {
+pub fn input(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let bytes = read_input();
-    let (mut room, mut r) = decode_call(&bytes);
+    let (mut room, mut r) = decode_call(&bytes, game.meta().ctx_features);
     let Some(p) = decode_player(&room, &mut r) else {
         return 0;
     };
@@ -149,16 +152,16 @@ pub fn input(cell: &'static HandlerCell) -> i32 {
     0
 }
 
-pub fn wake(cell: &'static HandlerCell) -> i32 {
+pub fn wake(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input);
+    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
     with_handler(cell, |h| h.on_wake(&mut room));
     0
 }
 
-pub fn close(cell: &'static HandlerCell) -> i32 {
+pub fn close(cell: &'static HandlerCell, game: &dyn Game) -> i32 {
     let input = read_input();
-    let (mut room, _) = decode_call(&input);
+    let (mut room, _) = decode_call(&input, game.meta().ctx_features);
     with_handler(cell, |h| h.on_close(&mut room));
     0
 }
@@ -287,16 +290,16 @@ mod tests {
 
         let mut w = ctx_with_members(&["alice"]);
         w.u32(0); // playerIdx
-        assert_eq!(run_export(w.b, || join(&CELL)), 0);
+        assert_eq!(run_export(w.b, || join(&CELL, &TestGame)), 0);
 
         let mut w = ctx_with_members(&["alice"]);
         w.u32(0);
         w.u8(0); // kind: rune
         w.u32('5' as u32);
         w.u8(0); // key
-        assert_eq!(run_export(w.b, || input(&CELL)), 0);
+        assert_eq!(run_export(w.b, || input(&CELL, &TestGame)), 0);
 
-        assert_eq!(run_export(ctx_with_members(&["alice"]).b, || wake(&CELL)), 0);
+        assert_eq!(run_export(ctx_with_members(&["alice"]).b, || wake(&CELL, &TestGame)), 0);
 
         SEEN.with(|s| {
             let s = s.borrow();
@@ -317,10 +320,10 @@ mod tests {
         // out-of-roster index
         let mut w = ctx_with_members(&["a"]);
         w.u32(9);
-        run_export(w.b, || join(&CELL));
+        run_export(w.b, || join(&CELL, &TestGame));
 
         // short read: no trailing playerIdx at all
-        run_export(ctx_with_members(&["a"]).b, || join(&CELL));
+        run_export(ctx_with_members(&["a"]).b, || join(&CELL, &TestGame));
 
         // unknown input kind
         let mut w = ctx_with_members(&["a"]);
@@ -328,7 +331,7 @@ mod tests {
         w.u8(7); // future kind
         w.u32(0);
         w.u8(0);
-        run_export(w.b, || input(&CELL));
+        run_export(w.b, || input(&CELL, &TestGame));
 
         // unknown named key (KeyNone / future)
         let mut w = ctx_with_members(&["a"]);
@@ -336,13 +339,13 @@ mod tests {
         w.u8(1);
         w.u32(0);
         w.u8(200);
-        run_export(w.b, || input(&CELL));
+        run_export(w.b, || input(&CELL, &TestGame));
 
         // truncated input event
         let mut w = ctx_with_members(&["a"]);
         w.u32(0);
         w.u8(0); // kind only, no rune/key bytes
-        run_export(w.b, || input(&CELL));
+        run_export(w.b, || input(&CELL, &TestGame));
 
         SEEN.with(|s| {
             let s = s.borrow();
@@ -361,7 +364,7 @@ mod tests {
         w.u32('x' as u32);
         w.u8(0);
         w.b.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]); // future growth
-        run_export(w.b, || input(&CELL));
+        run_export(w.b, || input(&CELL, &TestGame));
         SEEN.with(|s| assert_eq!(s.borrow().inputs, vec![Input::Char('x')]));
     }
 
@@ -370,7 +373,7 @@ mod tests {
         fresh();
         let mut w = ctx_with_members(&["a"]);
         w.u32(0);
-        run_export(w.b, || join(&CELL)); // no handler yet: drop, return 0
+        run_export(w.b, || join(&CELL, &TestGame)); // no handler yet: drop, return 0
         SEEN.with(|s| assert!(s.borrow().joins.is_empty()));
     }
 }
