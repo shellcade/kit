@@ -341,6 +341,18 @@ scores, `keep-winner` (default) for everything else. **`sum`/`max` values MUST
 be base-10 ASCII integers** (e.g. `strconv.Itoa` — `"990"`), within int64;
 anything unparsable falls back to keep-winner at merge time.
 
+**The store can degrade, and you won't see an error.** The ABI gives your game
+no error channel for KV: when the host's store has a transient failure, `Get`
+reports the key as **missing** (`nil, false, nil`) and `Set`/`Delete` return
+`nil` without persisting. That makes the natural
+`Get → missing → initialize starting balance → Set` wallet pattern a trap — a
+store blip reads a veteran's wallet as absent, and your "new player" write can
+clobber the durable value. Treat a missing read conservatively (defer the
+initializing write, or use `sum`/`max` rules so a blip-era write cannot win at
+merge time), and test the scenario with `kittest`: set
+`r.KVUnavailable = true` and your suite sees exactly those production
+semantics (see `ExampleRoom_kvUnavailable` in the `kittest` package).
+
 Per-game configuration (tunable by arcade admins without your involvement)
 arrives through `r.Services().Config.Get(ctx, "key")` — read it on a slow
 cadence in `OnWake` and fall back to compiled defaults when absent.
@@ -557,7 +569,10 @@ code, same verdict.
 
 For unit tests, `github.com/shellcade/kit/v2/kittest` is an in-memory `Room` +
 `Services` with a virtual clock, seeded RNG, and recorded
-frames/posts/settles — drive your `Handler` directly and assert.
+frames/posts/settles — drive your `Handler` directly and assert. Its
+`KVUnavailable` knob replays the host's KV degradation (reads come back
+missing, writes silently drop — see Durable state) so you can prove your
+wallet code survives a store blip.
 
 ## What your game can't do (on purpose)
 
