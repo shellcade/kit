@@ -378,8 +378,10 @@ the editor, they don't gate the store.
 
 ## Multiplayer
 
-Rooms hold 1–N players (your `GameMeta` declares the range). Render
-**per-player views** by composing a frame per member:
+Rooms hold 1–N players: your `GameMeta` declares the range, and the platform
+bound is **1..1024** (`wire.RosterCap` — the same constant that sizes the
+frame-delta roster on both sides of the ABI). Render **per-player views** by
+composing a frame per member:
 
 ```go
 for _, p := range r.Members() {
@@ -421,8 +423,9 @@ leaves:
 
 ## Large rooms: 100+ players in one room
 
-The SDK supports rooms of up to 1024 players, but a large room only stays
-inside the wake budget if the game follows three disciplines:
+The SDK supports rooms of up to 1024 players (`wire.RosterCap`, the platform's
+hard ceiling), but a large room only stays inside the wake budget if the game
+follows three disciplines:
 
 **Declare your heartbeat.** A roguelike or board game does not need the 50ms
 default. Declare your real cadence and the platform honors it (an admin
@@ -529,6 +532,11 @@ Authoring tips:
   reveal) so the preview shows what each seat sees.
 - `advance` must be a whole number of heartbeats — the parser rejects
   ambiguous durations rather than rounding.
+- **Smoke scripts drive at most 8 seats** — a screen-preview tool, not a
+  load harness. Large-room games (up to the platform's 1..1024 bound) still
+  pass smoke: the runner clamps your `MinPlayers` to the scripted seat count,
+  and large-room behavior is exercised by `shellcade-kit check`'s budget
+  gates, not by smoke screens.
 
 The `smoke` package exposes the same machinery as Go API (`smoke.Parse`,
 `smoke.Run`, `smoke.RenderANSI`) if you want shots inside your own tests.
