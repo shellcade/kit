@@ -33,6 +33,9 @@ const Version uint32 = 2
 //	2 — large-room meta section + ctx roster-epoch sentinels (kit v2.6.0)
 //	3 — lifecycle meta byte (kit v2.7.0)
 //	4 — the wireRevision meta field itself
+//	5 — per-member character section behind CtxFeatCharacter (str glyph ·
+//	    u8 ink RGB · u8 bg RGB · u8 asciiFallback after kind, both
+//	    member-bearing forms)
 //
 // Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
 // only 0 or values ≥ 4 are ever observed on the wire. Any future change that
@@ -44,7 +47,7 @@ const Version uint32 = 2
 // (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
 // TestRustWireRevisionMatchesWire in this package) — the two must change in
 // lockstep.
-const Revision uint16 = 4
+const Revision uint16 = 5
 
 // Guest export names.
 const (
@@ -491,7 +494,10 @@ func DecodeCtx(r *Rd) Ctx { return DecodeCtxFeat(r, 0) }
 // For payloads encoded without CtxFeatCharacter pass features=0 (or use
 // DecodeCtx). Passing features=CtxFeatCharacter against a features-0 payload
 // will trigger a short-read and set r.Bad — this is intentional (host-fault
-// contract: features must match the payload).
+// contract: features must match the payload). Unlike roster-epoch, whose
+// forms are self-describing via the count u16's spare sentinel space,
+// per-member trailing bytes carry no in-band discriminator — hence the
+// out-of-band features parameter.
 func DecodeCtxFeat(r *Rd, features uint32) Ctx {
 	var c Ctx
 	c.NowUnixNanos = r.I64()

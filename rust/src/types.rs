@@ -250,8 +250,14 @@ pub enum Lifecycle {
 /// [`Meta::ctx_features`].
 pub const CTX_FEAT_ROSTER_EPOCH: u32 = 1 << 0;
 
+/// Opts the game into per-member character sections (ABI.md §4.1): str glyph
+/// + ink RGB + bg RGB + ascii fallback, appended after each member's kind
+/// byte in both member-bearing ctx forms. Declare it in
+/// [`Meta::ctx_features`].
+pub const CTX_FEAT_CHARACTER: u32 = 1 << 1;
+
 /// The feature bits this SDK revision defines.
-pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH;
+pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH | CTX_FEAT_CHARACTER;
 
 /// Heartbeat declaration envelope (mirrors the host clamp range).
 pub(crate) const HEARTBEAT_MIN_MS: u16 = 20;

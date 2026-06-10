@@ -177,7 +177,7 @@ fn decode_members(r: &mut Rd<'_>, n: usize) -> Vec<Player> {
 /// `wire.Revision` — one protocol constant, asserted equal in lockstep by
 /// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
 /// parses this source line; keep the declaration on one line).
-pub(crate) const WIRE_REVISION: u16 = 4;
+pub(crate) const WIRE_REVISION: u16 = 5;
 
 /// Pack a [`Meta`] for the `meta` export — the single SDK-owned serializer.
 pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
@@ -490,7 +490,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000400";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000500";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -622,9 +622,9 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 4 LE
-        //         = "01000000" + "6400" + "00" + "0400"
-        assert!(got.ends_with("0000010000006400000400"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 5 LE
+        //         = "01000000" + "6400" + "00" + "0500"
+        assert!(got.ends_with("0000010000006400000500"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
     }
 }
 
