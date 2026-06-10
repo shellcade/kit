@@ -61,6 +61,21 @@ DIFFBENCH_GOLDEN_DIR=/path/to/out rustup run stable cargo test --release --test 
 emitter `kit/internal/diffbench/golden_test.go`. The input frame is stored as an
 encoder-independent changed-cell list so verification is not circular.)
 
+Two CI gates keep the committed vectors a live reference rather than a
+historical snapshot: the kit `test` job re-emits them from the current Go
+encoder and diffs against `tests/golden` (so a Go byte-output change cannot
+silently strand this harness on old bytes), and
+`kit/internal/diffbench/parity_test.go` asserts the emitter is byte-identical
+to the production `wire.BuildFrameDelta`/`wire.BuildKeyframe` encoders Go
+guests actually ship.
+
+The same generated-vector discipline covers the scalar encodings (meta / ctx /
+result): `kit/wire/scalar_golden_test.go` emits and freshness-gates
+`kit/rust/tests/golden/scalars.txt`, which the SDK crate replays in
+`rust/src/wire.rs` (`mod scalar_golden`) — byte-identity for guest-encoded
+payloads (meta, result), field + reader-position assertions over the
+host-encoded ctx forms.
+
 ## Perf sanity
 
 ```sh

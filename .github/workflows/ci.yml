@@ -25,6 +25,23 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      # The committed crossverify .dgld vectors are a snapshot of the Go
+      # reference encoder; without this gate a Go-side byte-output change
+      # leaves them silently representing a HISTORICAL encoder (the rust job's
+      # golden step keeps passing against the stale bytes). Re-emit from the
+      # current encoder and require an exact match. Emission is deterministic
+      # (no RNG; committed .fseq inputs), so this is non-flaky.
+      - name: crossverify golden vectors are fresh (byte-identity vs the CURRENT Go reference)
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          DIFFBENCH_GOLDEN_DIR="$out" go test -run TestEmitGolden ./internal/diffbench/
+          if ! diff -r "$out" crossverify/tests/golden; then
+            echo "::error::committed crossverify golden vectors are STALE: the Go reference encoder's byte output changed."
+            echo "Review the change (it is wire-visible), then regenerate and commit:"
+            echo "  DIFFBENCH_GOLDEN_DIR=crossverify/tests/golden go test -run TestEmitGolden ./internal/diffbench/"
+            exit 1
+          fi
       - name: no private imports (the module must build from ABI.md alone)
         run: |
           ! grep -rn "shellcade/shellcade" --include="*.go" . || (echo "FORBIDDEN private import" && exit 1)
