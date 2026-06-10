@@ -125,3 +125,24 @@ func TestDecodeCtxNoCharacterFeature(t *testing.T) {
 		}
 	}
 }
+
+// CharacterCell turns a character into one styled, ready-to-place cell; the
+// zero Character (feature undeclared) yields a blank cell.
+func TestCharacterCell(t *testing.T) {
+	c := Character{Glyph: "λ", InkR: 0x39, InkG: 0xFF, InkB: 0x14, BgR: 0x2D, BgG: 0x1B, BgB: 0x4E, Fallback: 'L'}
+	cell := CharacterCell(c)
+	if cell.Rune != 'λ' || cell.Cp2 != 0 || cell.Cont {
+		t.Fatalf("cell shape wrong: %+v", cell)
+	}
+	r, g, b := cell.FG.RGBVals()
+	if !cell.FG.IsSet() || r != 0x39 || g != 0xFF || b != 0x14 {
+		t.Fatalf("ink wrong: %+v", cell.FG)
+	}
+	br, bg2, bb := cell.BG.RGBVals()
+	if !cell.BG.IsSet() || br != 0x2D || bg2 != 0x1B || bb != 0x4E {
+		t.Fatalf("bg wrong: %+v", cell.BG)
+	}
+	if blank := CharacterCell(Character{}); blank.Rune != ' ' || blank.FG.IsSet() || blank.BG.IsSet() {
+		t.Fatalf("zero character should be a blank cell: %+v", blank)
+	}
+}

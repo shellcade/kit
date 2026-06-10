@@ -92,6 +92,7 @@ func resetDiffState() {
 	}
 	rosterCache = nil
 	rosterCacheBytes = nil
+	declaredCtxFeatures = 0
 }
 
 func frameWith(text string) *Frame {

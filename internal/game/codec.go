@@ -144,6 +144,7 @@ func decodeMembersInto(r *wire.Rd, n int) {
 		p.AccountID = r.Str()
 		p.Conn = r.Str()
 		p.Kind = Kind(r.U8())
+		// keep the legacy skim in decodeCtx in lockstep with this section
 		if declaredCtxFeatures&wire.CtxFeatCharacter != 0 {
 			p.Character.Glyph = r.Str()
 			p.Character.InkR = r.U8()

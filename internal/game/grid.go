@@ -215,3 +215,20 @@ func (f *Frame) Fill(r0, c0, r1, c1 int, cell Cell) {
 		}
 	}
 }
+
+// CharacterCell returns the one ready-made cell of a member's character tile:
+// the glyph styled with the resolved ink and background (player-character
+// capability, shellcade — every catalogue glyph is width 1, so games place a
+// character with zero width logic). The zero Character (the game's meta does
+// not declare CtxFeatCharacter) yields a blank cell.
+func CharacterCell(c Character) Cell {
+	if c.Glyph == "" {
+		return Cell{Rune: ' '}
+	}
+	r := []rune(c.Glyph)[0]
+	return Cell{
+		Rune: r,
+		FG:   RGB(c.InkR, c.InkG, c.InkB),
+		BG:   RGB(c.BgR, c.BgG, c.BgB),
+	}
+}
