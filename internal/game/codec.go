@@ -182,6 +182,11 @@ func encodeMeta(m GameMeta) []byte {
 	if err := wire.ValidateLifecycle(wm.Lifecycle, wm.MinPlayers); err != nil {
 		panic("kit: invalid GameMeta: " + err.Error())
 	}
+	// Stamp the wire revision this kit was built against — not
+	// author-settable; the host uses it to warn on or refuse artifacts
+	// declaring a revision above its own (deploy-order enforcement and
+	// per-artifact provenance, ABI.md §4.2 / §5).
+	wm.WireRevision = wire.Revision
 	return wire.EncodeMeta(wm)
 }
 
@@ -211,13 +216,14 @@ func encodeFrame(f *Frame) []byte {
 
 // ---- frame diffing state (ABI v2) -------------------------------------------
 
-// rosterCap is the fixed compile-time roster ceiling for per-index baselines.
-// 1024 supports large-room games (the SDK SILENTLY DROPS Send for an index
-// >= rosterCap, so the cap must comfortably exceed any real roster).
+// rosterCap is the fixed compile-time roster ceiling for per-index baselines,
+// adopted from the contract constant wire.RosterCap (1024 supports large-room
+// games; the SDK SILENTLY DROPS Send for an index >= rosterCap, so the cap
+// must comfortably exceed any real roster).
 // Guest linear memory stays proportional to the ACTIVE roster, not the cap:
 // per-slot baselines are lazily allocated on first commit — ~45 KiB per
 // actively-sent-to consumer instead of a ~47 MiB static table.
-const rosterCap = 1024
+const rosterCap = wire.RosterCap
 
 // Per-consumer SDK baseline state, allocated once and reused forever (leaking-GC
 // safe; one room per instance + serial callbacks ⇒ no locking). Each slot holds

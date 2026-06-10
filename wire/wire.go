@@ -18,6 +18,34 @@ import (
 // Version is the ABI major version.
 const Version uint32 = 2
 
+// Revision is the wire revision: a monotonic counter of the wire-visible
+// minor additions within ABI major Version, bumped in the same change that
+// lands each addition (ABI.md §5). SDK encoders stamp it automatically into
+// the meta payload's trailing wireRevision field, giving hosts a per-artifact
+// declaration of the newest wire feature the artifact may assume — the
+// mechanical anchor for the deploy-order rule (a host warns on or refuses
+// artifacts declaring a revision above its own compiled-in Revision).
+//
+// Ledger (the revision that INTRODUCED each wire-visible minor):
+//
+//	0 — unknown: the meta predates the wireRevision field (kit ≤ v2.7.x)
+//	1 — config-spec meta section (kit v2.3.0)
+//	2 — large-room meta section + ctx roster-epoch sentinels (kit v2.6.0)
+//	3 — lifecycle meta byte (kit v2.7.0)
+//	4 — the wireRevision meta field itself
+//
+// Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
+// only 0 or values ≥ 4 are ever observed on the wire. Any future change that
+// adds a wire-visible encoding (a new trailing meta section, a ctx-feature
+// bit, a delta flag bit, a new host function the guest calls, …) MUST append
+// a ledger entry and bump this constant in the same change.
+//
+// Like RosterCap, this is a protocol constant mirrored by the Rust guest SDK
+// (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
+// TestRustWireRevisionMatchesWire in this package) — the two must change in
+// lockstep.
+const Revision uint16 = 4
+
 // Guest export names.
 const (
 	ExpABI   = "shellcade_abi"
@@ -56,6 +84,20 @@ const (
 	FrameBytes = FrameCells * CellBytes // 46080
 	RowBytes   = Cols * CellBytes       // 1920
 )
+
+// RosterCap is the contract-wide roster ceiling for per-index frame
+// baselines: an SDK sizes its baseline table to RosterCap slots (plus the
+// broadcast slot, conventionally at index RosterCap) and silently drops Send
+// for a roster index >= RosterCap, and the host bounds-checks the send index
+// and sizes its per-slot cache the same way (ABI.md §3, §4.6). 1024 since the
+// large-room scale work (kit v2.5.0 Go / v2.7.0 Rust).
+//
+// This is a protocol invariant shared by every implementation — the Go guest
+// SDK (internal/game), the Rust guest SDK (rust/src/broadcast.rs ROSTER_CAP,
+// asserted equal to this constant by TestRustRosterCapMatchesWire in this
+// package), and the host adapter — so changing it is ABI-affecting and must
+// land in all of them in lockstep.
+const RosterCap = 1024
 
 // Player kind codes.
 const (
@@ -176,6 +218,14 @@ type Meta struct {
 	// long-lived granted room per slug). Hosts treat values they do not
 	// implement as resumable.
 	Lifecycle uint8
+
+	// WireRevision is the trailing wire-revision declaration (spec minor
+	// addition; u16 after the lifecycle byte): the wire.Revision of the kit
+	// the artifact was built against. 0 = unknown — the artifact predates
+	// the field. SDK encode paths stamp wire.Revision automatically (it is
+	// not author-settable); hosts use it to warn on or refuse artifacts
+	// declaring a revision above their own (ABI.md §4.2, §5).
+	WireRevision uint16
 }
 
 // Lifecycle values for the meta trailer.
@@ -467,6 +517,11 @@ func EncodeMeta(m Meta) []byte {
 	// Trailing lifecycle byte (spec minor addition). Always written; older
 	// decoders ignore it.
 	w.U8(m.Lifecycle)
+	// Trailing wire-revision (spec minor addition). Always written; older
+	// decoders ignore the bytes. The field rides through verbatim so a meta
+	// round-trips field-exact — SDK encode paths stamp Revision, and a zero
+	// value means "no declaration".
+	w.U16(m.WireRevision)
 	return w.B
 }
 
@@ -517,6 +572,11 @@ func DecodeMeta(b []byte) (Meta, error) {
 	// Trailing lifecycle byte, presence-guarded: absent = resumable.
 	if !r.Bad && r.Off < len(r.B) {
 		m.Lifecycle = r.U8()
+	}
+	// Trailing wire-revision, presence-guarded: absent = 0 (unknown — the
+	// artifact predates the field).
+	if !r.Bad && r.Off < len(r.B) {
+		m.WireRevision = r.U16()
 	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err

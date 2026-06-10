@@ -45,3 +45,17 @@ func TestEncodeMetaPanicsOnInvalidConfig(t *testing.T) {
 		Config: []ConfigKeySpec{{Key: "host.heartbeat_ms", Type: ConfigNumber}},
 	})
 }
+
+// TestEncodeMetaStampsWireRevision pins that the SDK stamps the compiled-in
+// wire revision into every meta — it is not author-settable, so every
+// artifact built with this kit declares the contract revision it may assume
+// (the host's deploy-order anchor, ABI.md §4.2 / §5).
+func TestEncodeMetaStampsWireRevision(t *testing.T) {
+	out, err := wire.DecodeMeta(encodeMeta(GameMeta{Slug: "g", Name: "G", MinPlayers: 1, MaxPlayers: 2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.WireRevision != wire.Revision {
+		t.Fatalf("meta declares wire revision %d, want wire.Revision = %d", out.WireRevision, wire.Revision)
+	}
+}

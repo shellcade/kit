@@ -45,6 +45,23 @@ type Room struct {
 	KV         map[string]map[string][]byte // accountID -> key -> value
 	KVRules    map[string]map[string]kit.MergeRule
 	ConfigVals map[string][]byte
+
+	// KVUnavailable simulates the production host's KV degradation — the ABI
+	// gives the guest no error channel, so when the host's store fails it does
+	// NOT surface a Go error; it degrades exactly like this:
+	//
+	//   - Get reports the key as missing (nil, false, nil)
+	//   - Set and Delete return nil without persisting anything
+	//
+	// While true, the same happens here, and the backing maps keep whatever
+	// they held (the outage is transient, not a wipe). Use it to test the
+	// read-absent-reinit hazard: a game that does the natural
+	// `Get → missing → initialize starting balance → Set` resets a player's
+	// saved wallet during a store blip. Robust games treat "missing" wallet
+	// reads conservatively (e.g. re-read on a later wake before overwriting,
+	// or write with kit.MergeMax/kit.MergeSum so a blip-era write cannot
+	// clobber the durable value at merge time).
+	KVUnavailable bool
 }
 
 // NewRoom returns a Room with the given members, a seeded RNG (seed 1), and a
@@ -137,11 +154,17 @@ type kv struct {
 }
 
 func (k kv) Get(_ context.Context, key string) ([]byte, bool, error) {
+	if k.r.KVUnavailable {
+		return nil, false, nil // host degradation: a store error reads as key-missing
+	}
 	v, ok := k.r.KV[k.id][key]
 	return v, ok, nil
 }
 
 func (k kv) Set(_ context.Context, key string, value []byte, rule kit.MergeRule) error {
+	if k.r.KVUnavailable {
+		return nil // host degradation: the write is silently dropped
+	}
 	if k.r.KV[k.id] == nil {
 		k.r.KV[k.id] = map[string][]byte{}
 		k.r.KVRules[k.id] = map[string]kit.MergeRule{}
@@ -152,6 +175,9 @@ func (k kv) Set(_ context.Context, key string, value []byte, rule kit.MergeRule)
 }
 
 func (k kv) Delete(_ context.Context, key string) error {
+	if k.r.KVUnavailable {
+		return nil // host degradation: the delete is silently dropped
+	}
 	delete(k.r.KV[k.id], key)
 	return nil
 }

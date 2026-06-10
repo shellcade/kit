@@ -28,6 +28,12 @@ shellcade-kit play  target/wasm32-wasip1/release/mygame.wasm
 > `my-game` builds `target/wasm32-wasip1/release/my_game.wasm`. The scaffolded
 > README carries your exact path.
 
+> **Coming in the next shellcade-kit release**: `shellcade-kit play` accepts
+> a game *directory* and runs the cargo wasm build itself, collapsing the
+> iterate loop above to the one command `shellcade-kit play .`. Until then,
+> the Rust inner loop is `cargo test` for logic plus the explicit wasm build
+> to see your game on screen.
+
 Game logic tests run natively — no wasm runtime needed:
 
 ```sh

@@ -11,11 +11,74 @@ on:
 # Pinned shellcade-kit toolchain: the author binary the arcade ships, attached
 # to this repo's matching release. Bump the version AND the linux/amd64 sha
 # (from that release's checksums.txt) together when adopting a new toolchain.
+# The kit-pin job below fails CI when this pin falls behind the newest
+# published binary release, so drift can't accumulate silently again.
 env:
-  SHELLCADE_KIT_VERSION: "2.2.0"
-  SHELLCADE_KIT_SHA256: "eab71d43085ce894a0075af0c3af71c9e23c8f3150cc50e46d0df3668742eff7"
+  SHELLCADE_KIT_VERSION: "2.3.0"
+  SHELLCADE_KIT_SHA256: "79fbc6d7290c52fa1c0b9a513e08599195af5af17d8d945926520763d7ac62bb"
 
 jobs:
+  # Toolchain pin lockstep: the SHELLCADE_KIT_VERSION pin above is a manual
+  # mirror of the newest published shellcade-kit binary release, and it has
+  # drifted before (2.2.0 lingered after v2.3.0 shipped). Two mechanical
+  # checks keep it honest:
+  #   1. the binary fetched at tag vX must EMBED kit vX — parse the `kit`
+  #      line of `shellcade-kit version` (the kit module version baked in via
+  #      debug.ReadBuildInfo, NOT the binary's own version line);
+  #   2. the pin must equal the newest release that actually carries
+  #      shellcade-kit binaries (binaries attach to existing kit releases, so
+  #      bare module tags without assets don't count).
+  # Runs on the nightly schedule too: staleness appears without a push.
+  kit-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: fetch pinned shellcade-kit (sha256-verified)
+        run: |
+          set -euo pipefail
+          ver="${SHELLCADE_KIT_VERSION}"
+          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
+          base="https://github.com/shellcade/kit/releases/download/v${ver}"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
+          tar -xzf "${asset}" shellcade-kit
+          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+      - name: pinned binary embeds the pinned kit version (lockstep)
+        run: |
+          set -euo pipefail
+          shellcade-kit version
+          embedded="$(shellcade-kit version | awk '$1 == "kit" { print $2 }')"
+          if [ "${embedded}" != "v${SHELLCADE_KIT_VERSION}" ]; then
+            echo "::error::lockstep violation: the v${SHELLCADE_KIT_VERSION} shellcade-kit binary embeds kit ${embedded}."
+            echo "A binary released at tag vX must be built against kit vX (see CLAUDE.md 'Lockstep')."
+            echo "Bump SHELLCADE_KIT_VERSION and SHELLCADE_KIT_SHA256 in ci.yml to a release whose binary matches its tag."
+            exit 1
+          fi
+      - name: pin is the newest published binary release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Newest release carrying shellcade-kit binaries — NOT releases/latest
+          # blindly, and not bare module tags: the private repo attaches the
+          # binaries to this repo's existing releases after a kit tag, so only
+          # releases with a shellcade-kit linux/amd64 asset are candidates.
+          newest="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq \
+            '[.[] | select(.draft or .prerelease | not)
+                  | select(any(.assets[].name; startswith("shellcade-kit_") and endswith("_linux_amd64.tar.gz")))
+             ][0].tag_name')"
+          echo "pin: v${SHELLCADE_KIT_VERSION}  newest binary release: ${newest}"
+          if [ -z "${newest}" ] || [ "${newest}" = "null" ]; then
+            echo "::error::could not determine the newest shellcade-kit binary release"
+            exit 1
+          fi
+          if [ "${newest}" != "v${SHELLCADE_KIT_VERSION}" ] && \
+             [ "$(printf '%s\n' "v${SHELLCADE_KIT_VERSION}" "${newest}" | sort -V | tail -n1)" = "${newest}" ]; then
+            echo "::error::SHELLCADE_KIT_VERSION (${SHELLCADE_KIT_VERSION}) is stale: the newest published shellcade-kit binary release is ${newest}."
+            echo "Bump SHELLCADE_KIT_VERSION to ${newest#v} and SHELLCADE_KIT_SHA256 to the"
+            echo "linux/amd64 entry of that release's checksums.txt in .github/workflows/ci.yml."
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -25,6 +88,23 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      # The committed crossverify .dgld vectors are a snapshot of the Go
+      # reference encoder; without this gate a Go-side byte-output change
+      # leaves them silently representing a HISTORICAL encoder (the rust job's
+      # golden step keeps passing against the stale bytes). Re-emit from the
+      # current encoder and require an exact match. Emission is deterministic
+      # (no RNG; committed .fseq inputs), so this is non-flaky.
+      - name: crossverify golden vectors are fresh (byte-identity vs the CURRENT Go reference)
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          DIFFBENCH_GOLDEN_DIR="$out" go test -run TestEmitGolden ./internal/diffbench/
+          if ! diff -r "$out" crossverify/tests/golden; then
+            echo "::error::committed crossverify golden vectors are STALE: the Go reference encoder's byte output changed."
+            echo "Review the change (it is wire-visible), then regenerate and commit:"
+            echo "  DIFFBENCH_GOLDEN_DIR=crossverify/tests/golden go test -run TestEmitGolden ./internal/diffbench/"
+            exit 1
+          fi
       - name: no private imports (the module must build from ABI.md alone)
         run: |
           ! grep -rn "shellcade/shellcade" --include="*.go" . || (echo "FORBIDDEN private import" && exit 1)

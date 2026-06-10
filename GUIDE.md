@@ -341,6 +341,18 @@ scores, `keep-winner` (default) for everything else. **`sum`/`max` values MUST
 be base-10 ASCII integers** (e.g. `strconv.Itoa` — `"990"`), within int64;
 anything unparsable falls back to keep-winner at merge time.
 
+**The store can degrade, and you won't see an error.** The ABI gives your game
+no error channel for KV: when the host's store has a transient failure, `Get`
+reports the key as **missing** (`nil, false, nil`) and `Set`/`Delete` return
+`nil` without persisting. That makes the natural
+`Get → missing → initialize starting balance → Set` wallet pattern a trap — a
+store blip reads a veteran's wallet as absent, and your "new player" write can
+clobber the durable value. Treat a missing read conservatively (defer the
+initializing write, or use `sum`/`max` rules so a blip-era write cannot win at
+merge time), and test the scenario with `kittest`: set
+`r.KVUnavailable = true` and your suite sees exactly those production
+semantics (see `ExampleRoom_kvUnavailable` in the `kittest` package).
+
 Per-game configuration (tunable by arcade admins without your involvement)
 arrives through `r.Services().Config.Get(ctx, "key")` — read it on a slow
 cadence in `OnWake` and fall back to compiled defaults when absent.
@@ -366,8 +378,10 @@ the editor, they don't gate the store.
 
 ## Multiplayer
 
-Rooms hold 1–N players (your `GameMeta` declares the range). Render
-**per-player views** by composing a frame per member:
+Rooms hold 1–N players: your `GameMeta` declares the range, and the platform
+bound is **1..1024** (`wire.RosterCap` — the same constant that sizes the
+frame-delta roster on both sides of the ABI). Render **per-player views** by
+composing a frame per member:
 
 ```go
 for _, p := range r.Members() {
@@ -409,8 +423,9 @@ leaves:
 
 ## Large rooms: 100+ players in one room
 
-The SDK supports rooms of up to 1024 players, but a large room only stays
-inside the wake budget if the game follows three disciplines:
+The SDK supports rooms of up to 1024 players (`wire.RosterCap`, the platform's
+hard ceiling), but a large room only stays inside the wake budget if the game
+follows three disciplines:
 
 **Declare your heartbeat.** A roguelike or board game does not need the 50ms
 default. Declare your real cadence and the platform honors it (an admin
@@ -517,6 +532,11 @@ Authoring tips:
   reveal) so the preview shows what each seat sees.
 - `advance` must be a whole number of heartbeats — the parser rejects
   ambiguous durations rather than rounding.
+- **Smoke scripts drive at most 8 seats** — a screen-preview tool, not a
+  load harness. Large-room games (up to the platform's 1..1024 bound) still
+  pass smoke: the runner clamps your `MinPlayers` to the scripted seat count,
+  and large-room behavior is exercised by `shellcade-kit check`'s budget
+  gates, not by smoke screens.
 
 The `smoke` package exposes the same machinery as Go API (`smoke.Parse`,
 `smoke.Run`, `smoke.RenderANSI`) if you want shots inside your own tests.
@@ -557,7 +577,10 @@ code, same verdict.
 
 For unit tests, `github.com/shellcade/kit/v2/kittest` is an in-memory `Room` +
 `Services` with a virtual clock, seeded RNG, and recorded
-frames/posts/settles — drive your `Handler` directly and assert.
+frames/posts/settles — drive your `Handler` directly and assert. Its
+`KVUnavailable` knob replays the host's KV degradation (reads come back
+missing, writes silently drop — see Durable state) so you can prove your
+wallet code survives a store blip.
 
 ## What your game can't do (on purpose)
 
