@@ -57,6 +57,20 @@ const (
 	RowBytes   = Cols * CellBytes       // 1920
 )
 
+// RosterCap is the contract-wide roster ceiling for per-index frame
+// baselines: an SDK sizes its baseline table to RosterCap slots (plus the
+// broadcast slot, conventionally at index RosterCap) and silently drops Send
+// for a roster index >= RosterCap, and the host bounds-checks the send index
+// and sizes its per-slot cache the same way (ABI.md §3, §4.6). 1024 since the
+// large-room scale work (kit v2.5.0 Go / v2.7.0 Rust).
+//
+// This is a protocol invariant shared by every implementation — the Go guest
+// SDK (internal/game), the Rust guest SDK (rust/src/broadcast.rs ROSTER_CAP,
+// asserted equal to this constant by TestRustRosterCapMatchesWire in this
+// package), and the host adapter — so changing it is ABI-affecting and must
+// land in all of them in lockstep.
+const RosterCap = 1024
+
 // Player kind codes.
 const (
 	KindGuest  uint8 = 0

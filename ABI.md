@@ -99,6 +99,14 @@ reserved-zero** and a guest MUST read only the low 32 bits (§4.6, §5).
 therefore **survives hibernation** (§8) — a guest does not re-issue it on
 resume.
 
+Roster indices addressed by `send` are bounded by **`RosterCap` = 1024**
+(`wire.RosterCap`): a guest SDK sizes its per-index baseline table to
+`RosterCap` slots plus the broadcast slot and silently drops `Send` for an
+index ≥ `RosterCap`, and the host bounds-checks the index and sizes its
+per-slot cache (§4.6) the same way. The cap is a shared protocol invariant:
+raising it is a coordinated change to `wire`, every guest SDK, and the host —
+never to one of them alone.
+
 Scoping is host-side: the guest names only a roster index and a key — the
 account and the game's namespace are derived by the host. A guest cannot
 address another game's data or a non-member account.

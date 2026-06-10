@@ -14,7 +14,10 @@ use crate::host;
 use crate::rng::SplitMix64;
 use crate::types::Player;
 
-/// Fixed roster ceiling for per-index baselines. At 24-byte cells the table is
+/// Fixed roster ceiling for per-index baselines, mirroring the contract
+/// constant `wire.RosterCap` in the kit's Go `wire` package (the Go test
+/// `TestRustRosterCapMatchesWire` parses this declaration and asserts the
+/// values are equal — change both in lockstep, never one alone).
 /// Per-slot baselines are lazily allocated (~45 KiB per actively-sent-to
 /// consumer), so linear memory tracks the ACTIVE roster, not the cap — far
 /// under the 32 MiB cap.

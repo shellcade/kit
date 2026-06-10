@@ -211,13 +211,14 @@ func encodeFrame(f *Frame) []byte {
 
 // ---- frame diffing state (ABI v2) -------------------------------------------
 
-// rosterCap is the fixed compile-time roster ceiling for per-index baselines.
-// 1024 supports large-room games (the SDK SILENTLY DROPS Send for an index
-// >= rosterCap, so the cap must comfortably exceed any real roster).
+// rosterCap is the fixed compile-time roster ceiling for per-index baselines,
+// adopted from the contract constant wire.RosterCap (1024 supports large-room
+// games; the SDK SILENTLY DROPS Send for an index >= rosterCap, so the cap
+// must comfortably exceed any real roster).
 // Guest linear memory stays proportional to the ACTIVE roster, not the cap:
 // per-slot baselines are lazily allocated on first commit — ~45 KiB per
 // actively-sent-to consumer instead of a ~47 MiB static table.
-const rosterCap = 1024
+const rosterCap = wire.RosterCap
 
 // Per-consumer SDK baseline state, allocated once and reused forever (leaking-GC
 // safe; one room per instance + serial callbacks ⇒ no locking). Each slot holds
