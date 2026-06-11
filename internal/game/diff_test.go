@@ -214,7 +214,7 @@ func TestRosterCache(t *testing.T) {
 	}
 
 	// Same roster bytes: changed=false and the SAME backing slice is reused
-	// (zero member allocations — the -gc=leaking lifeline).
+	// (zero member allocations — the roster-cache lifeline; see codec.go).
 	c2, _, changed := decodeCtx(ctxPayload(ada))
 	if changed {
 		t.Fatal("identical roster must not report a change")

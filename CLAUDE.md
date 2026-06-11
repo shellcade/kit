@@ -20,7 +20,8 @@ and example games. Third-party game authors import this module.
 - Frames pass by **pointer** in all SDK surfaces (see ABI.md §6) — never
   by value.
 - Keep the steady state allocation-free in guest paths (reused encode
-  buffers, freed Extism memory) while the TinyGo GC issue is open.
+  buffers, freed Extism memory) — under `-gc=conservative` steady-state
+  allocations are GC pressure inside the callback deadline.
 
 ## Docs live here, and they are the product
 
@@ -53,7 +54,7 @@ go build ./... && go vet ./...
 # end-to-end author journey (CI mirrors this): scaffold, build, verify.
 go run ./cmd/shellcade-kit new mygame
 cd mygame && go mod tidy && go run .           # native dev runner
-tinygo build -opt=1 -no-debug -gc=leaking \
+tinygo build -opt=1 -no-debug -gc=conservative \
     -o mygame.wasm -target wasip1 -buildmode=c-shared .
 ```
 

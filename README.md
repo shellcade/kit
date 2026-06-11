@@ -57,7 +57,7 @@ Rules of the road:
    Flags: `-seed N -heartbeat 50ms -config k=v -handle name`.
 2. **Artifact check (~4s):** build the real wasm and verify it:
 
-       tinygo build -opt=1 -no-debug -gc=leaking -o game.wasm \
+       tinygo build -opt=1 -no-debug -gc=conservative -o game.wasm \
            -target wasip1 -buildmode=c-shared .
 3. **Release:** `-opt=2` in CI (minutes — never in your inner loop).
 
@@ -65,9 +65,12 @@ Rules of the road:
   `-opt=2`; expect minutes, run it in CI not your inner loop.
 - `-opt=0` is NOT supported (giant unoptimized functions crash wazero's
   arm64 compiler).
-- `-gc=leaking` is required for now: TinyGo 0.41's conservative GC faults in
-  this reactor configuration (recorded finding; kit keeps the steady state
-  allocation-free so the leak rate is negligible for play sessions).
+- `-gc=conservative` is the build profile (since 2026-06-11): leaking GC made
+  every allocation permanent, so long-lived rooms hit the host's 32 MiB cap
+  and trapped (~52 min of play in production). The previously recorded
+  TinyGo-0.41 conservative-GC fault does not reproduce on 0.41.1
+  (200k-callback soak, flat memory). Keep steady-state paths allocation-free
+  anyway — it minimizes GC pauses inside the callback deadline.
 
 ## Test and play
 

@@ -121,7 +121,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@v2
-        with: { tinygo-version: "0.41.0" }
+        with: { tinygo-version: "0.41.1" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
       - name: fetch pinned shellcade-kit (sha256-verified)
         run: |
@@ -149,7 +149,7 @@ jobs:
           go mod edit -replace github.com/shellcade/kit/v2=../kit
           go mod tidy
           go build ./...
-          tinygo build -opt=1 -no-debug -gc=leaking -o cigame.wasm \
+          tinygo build -opt=1 -no-debug -gc=conservative -o cigame.wasm \
               -target wasip1 -buildmode=c-shared .
           ls -la cigame.wasm
           shellcade-kit check cigame.wasm
@@ -232,7 +232,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@v2
-        with: { tinygo-version: "0.41.0" }
+        with: { tinygo-version: "0.41.1" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
       - name: fetch pinned shellcade-kit (sha256-verified)
         run: |
@@ -253,7 +253,7 @@ jobs:
           cd cigame
           go mod edit -replace github.com/shellcade/kit/v2=../kit
           go mod tidy
-          tinygo build -opt=2 -no-debug -gc=leaking -o cigame.wasm \
+          tinygo build -opt=2 -no-debug -gc=conservative -o cigame.wasm \
               -target wasip1 -buildmode=c-shared .
           ls -la cigame.wasm
           shellcade-kit check cigame.wasm
