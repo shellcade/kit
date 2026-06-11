@@ -57,7 +57,8 @@ func ExportMeta() int32 {
 // the guest's baselines from diffing across a roster renumber. The byte
 // compare is strictly stronger than the fingerprint hash it replaced, and on
 // an unchanged roster the callback decodes ZERO member strings (allocation-
-// free — load-bearing under -gc=leaking, where per-callback roster decodes
+// free — still load-bearing under -gc=conservative (GC pressure), and
+// essential under -gc=leaking builds, where per-callback roster decodes
 // leak at callback rate and OOM long-lived large rooms).
 func decodeCall() (*room, *wire.Rd) {
 	ctx, r, rosterChanged := decodeCtx(inputBytes())

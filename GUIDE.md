@@ -472,7 +472,8 @@ nothing until something happens to move.
 
 The frame-delta layer already makes CLEAN-but-resent frames cheap on the
 wire; dirty tracking makes them free in CPU too. Allocation discipline
-matters as much as ever under `-gc=leaking`: compose into a reused
+matters as much as ever — under `-gc=conservative` steady-state allocations
+are GC pressure (pauses inside the callback deadline): compose into a reused
 `kit.Frame`, write cells directly, avoid per-player-per-wake string
 building.
 
@@ -546,7 +547,7 @@ The `smoke` package exposes the same machinery as Go API (`smoke.Parse`,
 | Stage | Command | What it proves |
 |---|---|---|
 | iterate | `go run .` (~0.1s) | gameplay, rendering, logic |
-| artifact | `tinygo build -opt=1 -no-debug -gc=leaking -target wasip1 -buildmode=c-shared .` (~4s) | the real wasm builds |
+| artifact | `tinygo build -opt=1 -no-debug -gc=conservative -target wasip1 -buildmode=c-shared .` (~4s) | the real wasm builds |
 | verify | `shellcade-kit check game.wasm` | ABI conformance, budgets, determinism — the same gate the arcade runs |
 | play it | `shellcade-kit play game.wasm --seats 2` | the artifact, on the production engine |
 

@@ -543,11 +543,13 @@ is what keeps the diff a `memcmp` and a from-scratch encoder tiny).
 - **Frames pass by pointer** in SDKs. A by-value ~46KB frame struct explodes
   into thousands of wasm locals: ~50× compile time, ~15× artifact size, and
   optimizer OOMs.
-- TinyGo: dev profile `-opt=1 -no-debug -gc=leaking -target wasip1
+- TinyGo: dev profile `-opt=1 -no-debug -gc=conservative -target wasip1
   -buildmode=c-shared` (~seconds). Release profile `-opt=2` (CI only).
   `-opt=0` is unsupported (oversized functions crash wazero's arm64 backend).
-  `-gc=leaking` is the interim profile while TinyGo's conservative GC fault is
-  tracked; SDKs must keep the steady state allocation-free (reused encode and
+  `-gc=conservative` is the profile since 2026-06-11: leaking GC OOM-trapped
+  long-lived rooms against the host's linear-memory cap, and the TinyGo-0.41
+  conservative-GC fault does not reproduce on 0.41.1. SDKs must still keep
+  the steady state allocation-free (reused encode and
   baseline buffers, freed Extism allocations). v2's per-consumer baseline table
   (one packed 24-byte-cell grid per roster slot + a broadcast slot + a
   keyframe-sized delta scratch) is reused package globals written by index, not

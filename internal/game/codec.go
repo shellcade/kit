@@ -20,10 +20,11 @@ type callContext struct {
 // Roster cache: the host re-sends the full member list in EVERY callback
 // payload, but rosters change only on join/leave/index-shift. Decoding N
 // members afresh per callback is O(N) string allocations per input/wake —
-// under -gc=leaking (the recommended build profile while the TinyGo GC issue
-// is open) those allocations are PERMANENT, so a long-lived large room leaks
-// its roster at callback rate (load testing measured ~100KB leaked per
-// callback at 1000 players, OOMing the guest within seconds of play).
+// GC pressure under -gc=conservative (the recommended build profile), and
+// under -gc=leaking builds those allocations are PERMANENT, so a long-lived
+// large room leaks its roster at callback rate (load testing measured ~100KB
+// leaked per callback at 1000 players, OOMing the guest within seconds of
+// play).
 //
 // Instead, the raw wire bytes of the member section are compared against the
 // previous callback's (a ~100B/member memcmp); on a match the previously
