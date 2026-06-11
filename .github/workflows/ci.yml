@@ -14,8 +14,8 @@ on:
 # The kit-pin job below fails CI when this pin falls behind the newest
 # published binary release, so drift can't accumulate silently again.
 env:
-  SHELLCADE_KIT_VERSION: "2.8.0"
-  SHELLCADE_KIT_SHA256: "e7cd9dde11ff9a8c60815dee056a1c33bc35e6aef7c8131417c52e28b9c4a195"
+  SHELLCADE_KIT_VERSION: "2.9.0"
+  SHELLCADE_KIT_SHA256: "9db05e285fb0d9ea41c1f2e772d1658814d9048bc9bee0e18e89d3b2a2be203d"
 
 jobs:
   # Toolchain pin lockstep: the SHELLCADE_KIT_VERSION pin above is a manual
