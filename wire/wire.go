@@ -33,6 +33,9 @@ const Version uint32 = 2
 //	2 — large-room meta section + ctx roster-epoch sentinels (kit v2.6.0)
 //	3 — lifecycle meta byte (kit v2.7.0)
 //	4 — the wireRevision meta field itself
+//	5 — per-member character section behind CtxFeatCharacter (str glyph ·
+//	    u8 ink RGB · u8 bg RGB · u8 asciiFallback after kind, both
+//	    member-bearing forms)
 //
 // Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
 // only 0 or values ≥ 4 are ever observed on the wire. Any future change that
@@ -44,7 +47,7 @@ const Version uint32 = 2
 // (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
 // TestRustWireRevisionMatchesWire in this package) — the two must change in
 // lockstep.
-const Revision uint16 = 4
+const Revision uint16 = 5
 
 // Guest export names.
 const (
@@ -125,12 +128,27 @@ const (
 	InputKey  uint8 = 1
 )
 
+// Character is the per-player resolved character, encoded after the Kind byte
+// in every member-bearing Ctx section iff the guest's meta declares
+// CtxFeatCharacter. The zero value means "not declared / not encoded".
+type Character struct {
+	Glyph    string // single width-1 glyph (unicode)
+	InkR     uint8
+	InkG     uint8
+	InkB     uint8
+	BgR      uint8
+	BgG      uint8
+	BgB      uint8
+	Fallback uint8 // ASCII fallback codepoint
+}
+
 // Player is one roster entry.
 type Player struct {
 	Handle    string
 	AccountID string
 	Conn      string
 	Kind      uint8
+	Character Character
 }
 
 // Ctx is the CallContext every host→guest callback carries.
@@ -172,8 +190,13 @@ const (
 	// sections otherwise.
 	CtxFeatRosterEpoch uint32 = 1 << 0
 
+	// CtxFeatCharacter opts the guest into per-member character sections
+	// (ABI.md §4.1): str glyph + ink RGB + bg RGB + ascii fallback, appended
+	// after each member's Kind byte in both member-bearing forms.
+	CtxFeatCharacter uint32 = 1 << 1
+
 	// KnownCtxFeatures is the mask of bits this wire revision defines.
-	KnownCtxFeatures uint32 = CtxFeatRosterEpoch
+	KnownCtxFeatures uint32 = CtxFeatRosterEpoch | CtxFeatCharacter
 )
 
 // Meta is the packed GameMeta.
@@ -387,11 +410,18 @@ func (r *Rd) Err() error {
 
 // EncodeCtx appends the packed CallContext to w in the LEGACY form (full
 // roster, no epoch) — the only form pre-roster-epoch guests understand, and
-// byte-identical to all prior wire revisions.
-func EncodeCtx(w *Buf, c Ctx) {
+// byte-identical to all prior wire revisions. Character fields on Player are
+// silently ignored. This is a frozen features=0 wrapper around EncodeCtxFeat.
+func EncodeCtx(w *Buf, c Ctx) { EncodeCtxFeat(w, c, 0) }
+
+// EncodeCtxFeat appends the packed CallContext to w in the legacy full-roster
+// form, encoding per-member character sections after each Kind byte when
+// features&CtxFeatCharacter != 0. For guests that do not declare
+// CtxFeatCharacter pass features=0 (or use EncodeCtx).
+func EncodeCtxFeat(w *Buf, c Ctx, features uint32) {
 	encodeCtxHeader(w, c)
 	w.U16(uint16(len(c.Members)))
-	encodeCtxMembers(w, c.Members)
+	encodeCtxMembers(w, c.Members, features)
 	w.Bool(c.Settled)
 }
 
@@ -399,14 +429,24 @@ func EncodeCtx(w *Buf, c Ctx) {
 // for guests whose meta declares CtxFeatRosterEpoch). full=true emits the
 // CtxRosterFull sentinel (epoch + real count + members); full=false emits
 // the CtxRosterUnchanged sentinel (epoch only — the member section is 6
-// bytes regardless of roster size, and c.Members is not read).
+// bytes regardless of roster size, and c.Members is not read). Character
+// fields on Player are silently ignored. This is a frozen features=0 wrapper
+// around EncodeCtxEpochFeat.
 func EncodeCtxEpoch(w *Buf, c Ctx, epoch uint32, full bool) {
+	EncodeCtxEpochFeat(w, c, epoch, full, 0)
+}
+
+// EncodeCtxEpochFeat appends the packed CallContext in roster-epoch mode,
+// encoding per-member character sections after each Kind byte when
+// features&CtxFeatCharacter != 0. For guests that do not declare
+// CtxFeatCharacter pass features=0 (or use EncodeCtxEpoch).
+func EncodeCtxEpochFeat(w *Buf, c Ctx, epoch uint32, full bool, features uint32) {
 	encodeCtxHeader(w, c)
 	if full {
 		w.U16(CtxRosterFull)
 		w.U32(epoch)
 		w.U16(uint16(len(c.Members)))
-		encodeCtxMembers(w, c.Members)
+		encodeCtxMembers(w, c.Members, features)
 	} else {
 		w.U16(CtxRosterUnchanged)
 		w.U32(epoch)
@@ -423,20 +463,42 @@ func encodeCtxHeader(w *Buf, c Ctx) {
 	w.U16(c.MinPlayers)
 }
 
-func encodeCtxMembers(w *Buf, members []Player) {
+func encodeCtxMembers(w *Buf, members []Player, features uint32) {
 	for _, p := range members {
 		w.Str(p.Handle)
 		w.Str(p.AccountID)
 		w.Str(p.Conn)
 		w.U8(p.Kind)
+		if features&CtxFeatCharacter != 0 {
+			w.Str(p.Character.Glyph)
+			w.U8(p.Character.InkR)
+			w.U8(p.Character.InkG)
+			w.U8(p.Character.InkB)
+			w.U8(p.Character.BgR)
+			w.U8(p.Character.BgG)
+			w.U8(p.Character.BgB)
+			w.U8(p.Character.Fallback)
+		}
 	}
 }
 
 // DecodeCtx reads a CallContext, leaving r positioned at the event extras.
 // It recognises all three member-section forms; on the unchanged sentinel
 // Members is nil and RosterUnchanged is true (the caller supplies its cached
-// roster).
-func DecodeCtx(r *Rd) Ctx {
+// roster). Character fields are never populated. This is a frozen features=0
+// wrapper around DecodeCtxFeat.
+func DecodeCtx(r *Rd) Ctx { return DecodeCtxFeat(r, 0) }
+
+// DecodeCtxFeat reads a CallContext encoded with the given features bitset,
+// populating per-member Character fields when features&CtxFeatCharacter != 0.
+// For payloads encoded without CtxFeatCharacter pass features=0 (or use
+// DecodeCtx). Passing features=CtxFeatCharacter against a features-0 payload
+// will trigger a short-read and set r.Bad — this is intentional (host-fault
+// contract: features must match the payload). Unlike roster-epoch, whose
+// forms are self-describing via the count u16's spare sentinel space,
+// per-member trailing bytes carry no in-band discriminator — hence the
+// out-of-band features parameter.
+func DecodeCtxFeat(r *Rd, features uint32) Ctx {
 	var c Ctx
 	c.NowUnixNanos = r.I64()
 	c.Seed = r.I64()
@@ -453,15 +515,15 @@ func DecodeCtx(r *Rd) Ctx {
 	case CtxRosterFull:
 		c.RosterEpoch = r.U32()
 		c.RosterEpochSet = true
-		c.Members = decodeCtxMembers(r, int(r.U16()))
+		c.Members = decodeCtxMembers(r, int(r.U16()), features)
 	default:
-		c.Members = decodeCtxMembers(r, int(count))
+		c.Members = decodeCtxMembers(r, int(count), features)
 	}
 	c.Settled = r.Bool()
 	return c
 }
 
-func decodeCtxMembers(r *Rd, n int) []Player {
+func decodeCtxMembers(r *Rd, n int, features uint32) []Player {
 	var members []Player
 	for i := 0; i < n && !r.Bad; i++ {
 		var p Player
@@ -469,6 +531,16 @@ func decodeCtxMembers(r *Rd, n int) []Player {
 		p.AccountID = r.Str()
 		p.Conn = r.Str()
 		p.Kind = r.U8()
+		if features&CtxFeatCharacter != 0 {
+			p.Character.Glyph = r.Str()
+			p.Character.InkR = r.U8()
+			p.Character.InkG = r.U8()
+			p.Character.InkB = r.U8()
+			p.Character.BgR = r.U8()
+			p.Character.BgG = r.U8()
+			p.Character.BgB = r.U8()
+			p.Character.Fallback = r.U8()
+		}
 		members = append(members, p)
 	}
 	return members

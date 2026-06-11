@@ -10,6 +10,23 @@ pub enum Kind {
     Member,
 }
 
+/// A player's resolved arcade character (mirrors Go `kit.Character`): a
+/// single width-1 glyph with ink/background colors and an ASCII fallback
+/// codepoint. The default value means "no character" — what every member
+/// carries unless the game declares [`CTX_FEAT_CHARACTER`] in
+/// [`Meta::ctx_features`].
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct Character {
+    pub glyph: String,
+    pub ink_r: u8,
+    pub ink_g: u8,
+    pub ink_b: u8,
+    pub bg_r: u8,
+    pub bg_g: u8,
+    pub bg_b: u8,
+    pub fallback: u8,
+}
+
 /// A value-comparable membership token (mirrors Go `kit.Player`).
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Player {
@@ -17,6 +34,7 @@ pub struct Player {
     pub handle: String,
     pub kind: Kind,
     pub conn: String,
+    pub character: Character,
 }
 
 impl Player {
@@ -250,8 +268,14 @@ pub enum Lifecycle {
 /// [`Meta::ctx_features`].
 pub const CTX_FEAT_ROSTER_EPOCH: u32 = 1 << 0;
 
+/// Opts the game into per-member character sections (ABI.md §4.1): str glyph
+/// + ink RGB + bg RGB + ascii fallback, appended after each member's kind
+/// byte in both member-bearing ctx forms. Declare it in
+/// [`Meta::ctx_features`].
+pub const CTX_FEAT_CHARACTER: u32 = 1 << 1;
+
 /// The feature bits this SDK revision defines.
-pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH;
+pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH | CTX_FEAT_CHARACTER;
 
 /// Heartbeat declaration envelope (mirrors the host clamp range).
 pub(crate) const HEARTBEAT_MIN_MS: u16 = 20;

@@ -3,7 +3,7 @@
 //! dispatch layer gates on — degraded values are never delivered to a game),
 //! CallContext decode, and the Meta / Result encoders. Target-agnostic.
 
-use crate::types::{Kind, Meta, Mode, Outcome, Player, RoomConfig};
+use crate::types::{Character, Kind, Meta, Mode, Outcome, Player, RoomConfig, CTX_FEAT_CHARACTER};
 
 // ---- little-endian append encoder ------------------------------------------
 
@@ -112,7 +112,14 @@ pub(crate) struct CallCtx {
 
 /// Decode the CallContext prefix and return it plus the reader positioned at
 /// the trailing per-export args (e.g. playerIdx for join/leave/input).
-pub(crate) fn decode_ctx(input: &[u8]) -> (CallCtx, Rd<'_>) {
+/// `features` is the registered game's [`Meta::ctx_features`]: the host
+/// encodes per-member character sections iff the guest's meta declares
+/// [`CTX_FEAT_CHARACTER`] — there is no in-band discriminator — so the
+/// decoder must know the declaration to read the member section with the
+/// right shape.
+///
+/// [`Meta::ctx_features`]: crate::types::Meta::ctx_features
+pub(crate) fn decode_ctx(input: &[u8], features: u32) -> (CallCtx, Rd<'_>) {
     let mut r = Rd::new(input);
     let now = r.i64();
     let seed = r.i64();
@@ -135,9 +142,9 @@ pub(crate) fn decode_ctx(input: &[u8]) -> (CallCtx, Rd<'_>) {
         CTX_ROSTER_FULL => {
             let epoch = r.u32();
             let n = r.u16() as usize;
-            (decode_members(&mut r, n), Some(epoch), false)
+            (decode_members(&mut r, n, features), Some(epoch), false)
         }
-        n => (decode_members(&mut r, n as usize), None, false),
+        n => (decode_members(&mut r, n as usize, features), None, false),
     };
     let settled = r.u8() != 0;
     (
@@ -153,17 +160,37 @@ pub(crate) fn decode_ctx(input: &[u8]) -> (CallCtx, Rd<'_>) {
     )
 }
 
-fn decode_members(r: &mut Rd<'_>, n: usize) -> Vec<Player> {
+fn decode_members(r: &mut Rd<'_>, n: usize, features: u32) -> Vec<Player> {
     let mut members = Vec::with_capacity(n.min(64));
     for _ in 0..n {
         let handle = r.string();
         let account_id = r.string();
         let conn = r.string();
         let kind = if r.u8() == 1 { Kind::Member } else { Kind::Guest };
+        // Character section (the host sends it iff our meta declares the
+        // feature): glyph str + 7 fixed bytes (ink RGB, bg RGB, fallback).
+        let character = if features & CTX_FEAT_CHARACTER != 0 {
+            Character {
+                glyph: r.string(),
+                ink_r: r.u8(),
+                ink_g: r.u8(),
+                ink_b: r.u8(),
+                bg_r: r.u8(),
+                bg_g: r.u8(),
+                bg_b: r.u8(),
+                fallback: r.u8(),
+            }
+        } else {
+            Character::default()
+        };
         if r.bad() {
-            break; // degrade: keep what decoded cleanly
+            // Degrade: keep what decoded cleanly. Deliberate cross-language
+            // difference: Go appends the partially-read (zero-padded) member;
+            // this side drops it — both never deliver it (the dispatch layer
+            // gates on bad and drops the callback).
+            break;
         }
-        members.push(Player { handle, account_id, conn, kind });
+        members.push(Player { handle, account_id, conn, kind, character });
     }
     members
 }
@@ -177,7 +204,7 @@ fn decode_members(r: &mut Rd<'_>, n: usize) -> Vec<Player> {
 /// `wire.Revision` — one protocol constant, asserted equal in lockstep by
 /// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
 /// parses this source line; keep the declaration on one line).
-pub(crate) const WIRE_REVISION: u16 = 4;
+pub(crate) const WIRE_REVISION: u16 = 5;
 
 /// Pack a [`Meta`] for the `meta` export — the single SDK-owned serializer.
 pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
@@ -333,7 +360,7 @@ mod tests {
     #[test]
     fn ctx_round_trip_and_trailing_args() {
         let payload = ctx_payload(&[("alice", "acct-a", 1), ("bob", "acct-b", 0)], &7u32.to_le_bytes());
-        let (ctx, mut r) = decode_ctx(&payload);
+        let (ctx, mut r) = decode_ctx(&payload, 0);
         assert_eq!(ctx.now_unix_nanos, 123_000_000);
         assert_eq!(ctx.cfg.seed, 42);
         assert!(ctx.cfg.seed_set);
@@ -345,10 +372,23 @@ mod tests {
         assert!(!r.bad());
     }
 
+    /// The old path is provably unchanged: a non-declaring guest decoding a
+    /// feature-off payload yields default (no-)characters for every member.
+    #[test]
+    fn feature_off_decode_yields_default_characters() {
+        let payload = ctx_payload(&[("alice", "acct-a", 1), ("bob", "acct-b", 0)], &7u32.to_le_bytes());
+        let (ctx, mut r) = decode_ctx(&payload, 0);
+        for m in ctx.members.iter() {
+            assert_eq!(m.character, crate::types::Character::default());
+        }
+        assert_eq!(r.u32(), 7);
+        assert!(!r.bad());
+    }
+
     #[test]
     fn short_read_degrades_and_latches_bad() {
         let payload = ctx_payload(&[("alice", "acct-a", 1)], &[]);
-        let (_, mut r) = decode_ctx(&payload);
+        let (_, mut r) = decode_ctx(&payload, 0);
         assert_eq!(r.u32(), 0); // no trailing u32 → degrade to 0
         assert!(r.bad());
         assert_eq!(r.u32(), 0); // stays degraded
@@ -358,7 +398,29 @@ mod tests {
     fn truncated_ctx_never_panics() {
         let full = ctx_payload(&[("alice", "acct-a", 1)], &[]);
         for n in 0..full.len() {
-            let (_ctx, _r) = decode_ctx(&full[..n]); // must not panic
+            let (_ctx, _r) = decode_ctx(&full[..n], 0); // must not panic
+        }
+        // A character-bearing payload decoded WITH the bit: the character
+        // section's reads must degrade at every truncation point too.
+        let mut w = Buf::new();
+        w.i64(9); // now
+        w.i64(7); // seed
+        w.u8(1); // seed_set
+        w.u8(0); // mode quick
+        w.u16(2); // capacity
+        w.u16(1); // min players
+        w.u16(1); // count
+        w.str("ana");
+        w.str("a-1");
+        w.str("c-1");
+        w.u8(1); // kind member
+        w.str("λ"); // glyph
+        for b in [1u8, 2, 3, 4, 5, 6, b'L'] {
+            w.u8(b); // ink RGB, bg RGB, fallback
+        }
+        w.u8(1); // settled
+        for n in 0..w.b.len() {
+            let (_ctx, _r) = decode_ctx(&w.b[..n], CTX_FEAT_CHARACTER); // must not panic
         }
     }
 
@@ -490,7 +552,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000400";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000500";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -529,8 +591,8 @@ mod tests {
     #[test]
     fn outcome_maps_players_to_roster_indices() {
         let roster = vec![
-            Player { handle: "a".into(), account_id: "ia".into(), conn: "c1".into(), kind: Kind::Member },
-            Player { handle: "b".into(), account_id: "ib".into(), conn: "c2".into(), kind: Kind::Guest },
+            Player { handle: "a".into(), account_id: "ia".into(), conn: "c1".into(), kind: Kind::Member, ..Player::default() },
+            Player { handle: "b".into(), account_id: "ib".into(), conn: "c2".into(), kind: Kind::Guest, ..Player::default() },
         ];
         let res = Outcome {
             rankings: vec![
@@ -573,7 +635,7 @@ mod tests {
         w.u8(1); // kind member
         w.u8(0); // settled
         w.u8(0xAB); // event extra
-        let (ctx, mut r) = decode_ctx(&w.b);
+        let (ctx, mut r) = decode_ctx(&w.b, 0);
         assert_eq!(ctx.roster_epoch, Some(42));
         assert!(!ctx.roster_unchanged);
         assert_eq!(ctx.members.len(), 1);
@@ -591,7 +653,7 @@ mod tests {
         w.u32(43);
         w.u8(0); // settled
         w.u8(0xCD);
-        let (ctx, mut r) = decode_ctx(&w.b);
+        let (ctx, mut r) = decode_ctx(&w.b, 0);
         assert_eq!(ctx.roster_epoch, Some(43));
         assert!(ctx.roster_unchanged);
         assert!(ctx.members.is_empty());
@@ -622,9 +684,9 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 4 LE
-        //         = "01000000" + "6400" + "00" + "0400"
-        assert!(got.ends_with("0000010000006400000400"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 5 LE
+        //         = "01000000" + "6400" + "00" + "0500"
+        assert!(got.ends_with("0000010000006400000500"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
     }
 }
 
@@ -759,6 +821,7 @@ mod scalar_golden {
                 account_id: account_id.into(),
                 conn: conn.into(),
                 kind,
+                ..Player::default()
             }
         }
         let roster = vec![
@@ -813,7 +876,7 @@ mod scalar_golden {
     #[test]
     fn ctx_legacy_replays_go_bytes() {
         let b = vector("ctx_legacy");
-        let (ctx, mut r) = decode_ctx(&b);
+        let (ctx, mut r) = decode_ctx(&b, 0);
         assert_ctx_common(&ctx);
         assert_eq!(ctx.roster_epoch, None);
         assert!(!ctx.roster_unchanged);
@@ -824,7 +887,7 @@ mod scalar_golden {
     #[test]
     fn ctx_epoch_full_replays_go_bytes() {
         let b = vector("ctx_epoch_full");
-        let (ctx, mut r) = decode_ctx(&b);
+        let (ctx, mut r) = decode_ctx(&b, CTX_FEAT_ROSTER_EPOCH);
         assert_ctx_common(&ctx);
         assert_eq!(ctx.roster_epoch, Some(42));
         assert!(!ctx.roster_unchanged);
@@ -835,7 +898,7 @@ mod scalar_golden {
     #[test]
     fn ctx_epoch_unchanged_replays_go_bytes() {
         let b = vector("ctx_epoch_unchanged");
-        let (ctx, mut r) = decode_ctx(&b);
+        let (ctx, mut r) = decode_ctx(&b, CTX_FEAT_ROSTER_EPOCH);
         assert_ctx_common(&ctx);
         assert_eq!(ctx.roster_epoch, Some(43));
         assert!(ctx.roster_unchanged);
@@ -844,3 +907,127 @@ mod scalar_golden {
     }
 }
 
+/// Cross-language golden replay for the per-member ctx character section
+/// (CtxFeatCharacter, ABI.md §4.1): the vectors in
+/// `rust/tests/golden/ctx_character.txt` are EMITTED by the Go reference
+/// encoders (`kit/wire`, `character_golden_test.go` — whose
+/// `TestCtxCharacterGoldenFresh` fails the Go test run if the committed file
+/// goes stale) and replayed here. A Ctx is host-encoded (host→guest only), so
+/// this side asserts DECODE parity — every field of both members plus the
+/// reader position at the trailing u32 event-extra — in both member-bearing
+/// forms. Lives beside `scalar_golden` because `decode_ctx` is crate-private.
+#[cfg(test)]
+mod ctx_character_golden {
+    use super::*;
+    use crate::types::{Character, Kind, Mode, CTX_FEAT_CHARACTER, CTX_FEAT_ROSTER_EPOCH};
+
+    const VECTORS: &str = include_str!("../tests/golden/ctx_character.txt");
+
+    /// The u32 appended after every ctx vector (stand-in for per-export
+    /// trailing args): decode must leave the reader exactly there.
+    const CTX_EVENT_EXTRA: u32 = 7;
+
+    fn vector(name: &str) -> Vec<u8> {
+        for line in VECTORS.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (n, hex) = line.split_once(" = ").expect("malformed vector line");
+            if n != name {
+                continue;
+            }
+            assert!(hex.len() % 2 == 0, "{name}: odd hex length");
+            return (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("bad hex"))
+                .collect();
+        }
+        panic!(
+            "vector {name} not found in tests/golden/ctx_character.txt — regenerate from kit/wire:\n  \
+             WIRE_SCALAR_GOLDEN_WRITE=1 go test -run TestCtxCharacterGoldenFresh ./wire/"
+        );
+    }
+
+    // Go: ctxCharacterFixture — the canonical two-member character roster.
+    fn assert_ctx_common(ctx: &CallCtx) {
+        assert_eq!(ctx.now_unix_nanos, 9);
+        assert_eq!(ctx.cfg.seed, 7);
+        assert!(ctx.cfg.seed_set);
+        assert_eq!(ctx.cfg.mode, Mode::Private);
+        assert_eq!(ctx.cfg.capacity, 4);
+        assert_eq!(ctx.cfg.min_players, 2);
+        assert!(ctx.settled);
+    }
+
+    fn assert_character_roster(members: &[Player]) {
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].handle, "ana");
+        assert_eq!(members[0].account_id, "a-1");
+        assert_eq!(members[0].conn, "c-1");
+        assert_eq!(members[0].kind, Kind::Member);
+        assert_eq!(
+            members[0].character,
+            Character {
+                glyph: "λ".into(),
+                ink_r: 0x39,
+                ink_g: 0xFF,
+                ink_b: 0x14,
+                bg_r: 0x2D,
+                bg_g: 0x1B,
+                bg_b: 0x4E,
+                fallback: b'L',
+            }
+        );
+        assert_eq!(members[1].handle, "bob");
+        assert_eq!(members[1].account_id, "a-2");
+        assert_eq!(members[1].conn, "c-2");
+        assert!(members[1].guest());
+        assert_eq!(
+            members[1].character,
+            Character {
+                glyph: "@".into(),
+                ink_r: 1,
+                ink_g: 2,
+                ink_b: 3,
+                bg_r: 4,
+                bg_g: 5,
+                bg_b: 6,
+                fallback: b'@',
+            }
+        );
+    }
+
+    fn assert_event_extra(r: &mut Rd<'_>, name: &str) {
+        assert_eq!(
+            r.u32(),
+            CTX_EVENT_EXTRA,
+            "{name}: reader not positioned at the event extras"
+        );
+        assert!(!r.bad(), "{name}: reader went bad reading the event extras");
+        assert_eq!(r.u8(), 0, "{name}: trailing bytes after the event extras");
+        assert!(r.bad(), "{name}: payload longer than fields + event extras");
+    }
+
+    #[test]
+    fn ctx_character_legacy_replays_go_bytes() {
+        let b = vector("ctx_character_legacy");
+        let (ctx, mut r) = decode_ctx(&b, CTX_FEAT_CHARACTER);
+        assert_ctx_common(&ctx);
+        assert_eq!(ctx.roster_epoch, None);
+        assert!(!ctx.roster_unchanged);
+        assert_character_roster(&ctx.members);
+        assert_event_extra(&mut r, "ctx_character_legacy");
+    }
+
+    #[test]
+    fn ctx_character_epoch_full_replays_go_bytes() {
+        let b = vector("ctx_character_epoch_full");
+        let (ctx, mut r) = decode_ctx(&b, CTX_FEAT_CHARACTER | CTX_FEAT_ROSTER_EPOCH);
+        assert_ctx_common(&ctx);
+        assert_eq!(ctx.roster_epoch, Some(42));
+        assert!(!ctx.roster_unchanged);
+        assert_character_roster(&ctx.members);
+        assert_event_extra(&mut r, "ctx_character_epoch_full");
+    }
+}

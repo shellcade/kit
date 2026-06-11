@@ -19,6 +19,7 @@ const ABIVersion = game.ABIVersion
 
 type (
 	Player       = game.Player
+	Character    = game.Character
 	Kind         = game.Kind
 	Input        = game.Input
 	InputKind    = game.InputKind
@@ -95,6 +96,7 @@ const (
 	LowerBetter  = game.LowerBetter
 
 	CtxFeatRosterEpoch = game.CtxFeatRosterEpoch
+	CtxFeatCharacter   = game.CtxFeatCharacter
 
 	LifecycleResumable = game.LifecycleResumable
 	LifecycleEphemeral = game.LifecycleEphemeral
@@ -152,6 +154,11 @@ var (
 // NewFrame returns a blank 24x80 frame. Frames are handled by POINTER
 // throughout the SDK (see ABI.md §6).
 func NewFrame() *Frame { return game.NewFrame() }
+
+// CharacterCell returns the one ready-made cell of a member's character tile:
+// the glyph styled with the resolved ink and background. The zero Character
+// (the game's meta does not declare CtxFeatCharacter) yields a blank cell.
+func CharacterCell(c Character) Cell { return game.CharacterCell(c) }
 
 // ---- the authoring contract --------------------------------------------------------
 
