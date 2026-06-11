@@ -82,6 +82,10 @@ func scalarMetaFull() Meta {
 		HeartbeatMS:  250,
 		Lifecycle:    LifecycleEphemeral,
 		WireRevision: Revision,
+		Controls: []ControlDecl{
+			{Kind: InputRune, Rune: 'r', Label: "RESIGN"},
+			{Kind: InputKey, Key: KeyCodeBackspace, Label: "UNDO"},
+		},
 	}
 }
 
@@ -106,6 +110,7 @@ func scalarMetaTrunc() Meta {
 		HeartbeatMS:    100,
 		Lifecycle:      LifecycleEphemeral,
 		WireRevision:   Revision,
+		Controls:       []ControlDecl{{Kind: InputKey, Key: KeyCodeBackspace, Label: "UNDO"}},
 	}
 }
 
@@ -146,13 +151,15 @@ type scalarVector struct {
 }
 
 // Trailing meta section widths measured from the END of an encoding with zero
-// config specs: the u16 spec count (2) + large-room u32+u16 (6) + lifecycle
-// u8 (1) + wireRevision u16 (2).
+// config specs and ONE declared key control (u16 count + u8 kind + u8 key +
+// str "UNDO" = 10): config 2 | large-room 6 | lifecycle 1 | wireRevision 2 |
+// controls 10.
 const (
-	truncPreRevision  = 2
-	truncPreLifecycle = 2 + 1
-	truncPreLargeRoom = 2 + 1 + 6
-	truncPreConfig    = 2 + 1 + 6 + 2
+	truncPreControls  = 10
+	truncPreRevision  = 10 + 2
+	truncPreLifecycle = 10 + 2 + 1
+	truncPreLargeRoom = 10 + 2 + 1 + 6
+	truncPreConfig    = 10 + 2 + 1 + 6 + 2
 )
 
 func scalarVectors() []scalarVector {
@@ -169,6 +176,7 @@ func scalarVectors() []scalarVector {
 		{"meta_default", EncodeMeta(scalarMetaDefault())},
 		{"meta_full", EncodeMeta(scalarMetaFull())},
 		{"meta_trunc_pre_config", trunc[:len(trunc)-truncPreConfig]},
+		{"meta_trunc_pre_controls", trunc[:len(trunc)-truncPreControls]},
 		{"meta_trunc_pre_largeroom", trunc[:len(trunc)-truncPreLargeRoom]},
 		{"meta_trunc_pre_lifecycle", trunc[:len(trunc)-truncPreLifecycle]},
 		{"meta_trunc_pre_revision", trunc[:len(trunc)-truncPreRevision]},
@@ -265,15 +273,22 @@ func TestScalarGoldenMetaDecode(t *testing.T) {
 		{"meta_trunc_pre_config", truncPreConfig, func(m *Meta) {
 			m.ConfigSpecs = nil
 			m.CtxFeatures, m.HeartbeatMS, m.Lifecycle, m.WireRevision = 0, 0, 0, 0
+			m.Controls = nil
 		}},
 		{"meta_trunc_pre_largeroom", truncPreLargeRoom, func(m *Meta) {
 			m.CtxFeatures, m.HeartbeatMS, m.Lifecycle, m.WireRevision = 0, 0, 0, 0
+			m.Controls = nil
 		}},
 		{"meta_trunc_pre_lifecycle", truncPreLifecycle, func(m *Meta) {
 			m.Lifecycle, m.WireRevision = 0, 0
+			m.Controls = nil
 		}},
 		{"meta_trunc_pre_revision", truncPreRevision, func(m *Meta) {
 			m.WireRevision = 0
+			m.Controls = nil
+		}},
+		{"meta_trunc_pre_controls", truncPreControls, func(m *Meta) {
+			m.Controls = nil
 		}},
 	}
 	for _, tc := range cases {

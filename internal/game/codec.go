@@ -211,6 +211,19 @@ func encodeMeta(m GameMeta) []byte {
 	if err := wire.ValidateLifecycle(wm.Lifecycle, wm.MinPlayers); err != nil {
 		panic("kit: invalid GameMeta: " + err.Error())
 	}
+	// Declared-controls trailer, validated under the same fail-fast posture
+	// as config specs.
+	for _, cd := range m.Controls {
+		wm.Controls = append(wm.Controls, wire.ControlDecl{
+			Kind:  uint8(cd.Input.Kind),
+			Rune:  cd.Input.Rune,
+			Key:   uint8(cd.Input.Key),
+			Label: cd.Label,
+		})
+	}
+	if err := wire.ValidateControls(wm.Controls); err != nil {
+		panic("kit: invalid GameMeta.Controls: " + err.Error())
+	}
 	// Stamp the wire revision this kit was built against — not
 	// author-settable; the host uses it to warn on or refuse artifacts
 	// declaring a revision above its own (deploy-order enforcement and

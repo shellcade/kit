@@ -251,6 +251,24 @@ pub struct Meta {
     /// per slug (takes effect only when the platform grants it).
     /// Resident with `min_players > 1` panics at `meta()` encode time.
     pub lifecycle: Lifecycle,
+
+    /// Declared extra controls (`&[]` = none declared): inputs beyond the
+    /// canonical vocabulary — a printable rune or a named key — each with a
+    /// short display label, surfaced by touch front ends as tappable
+    /// affordances that send exactly the declared input. Presentation
+    /// metadata only; declarations change no input interpretation. Validated
+    /// at `meta()` encode time — an invalid declaration is an authoring bug
+    /// and panics there.
+    pub controls: &'static [ControlDecl],
+}
+
+/// One declared extra control ([`Meta::controls`]): the exact input it sends
+/// and a short display label of at most 16 chars, e.g.
+/// `ControlDecl { input: Input::Char('r'), label: "RESIGN" }`.
+#[derive(Clone, Copy, Debug)]
+pub struct ControlDecl {
+    pub input: crate::input::Input,
+    pub label: &'static str,
 }
 
 /// Room end-of-life declaration (wire values 0/1/2).
@@ -298,6 +316,7 @@ impl Meta {
         config: &[],
         ctx_features: 0,
         heartbeat_ms: 0,
+        controls: &[],
         lifecycle: Lifecycle::Resumable,
     };
 }

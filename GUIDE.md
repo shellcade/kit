@@ -224,6 +224,35 @@ Declare your input context once (`r.SetInputContext`): `CtxNav` for menus and
 move-around games, `CtxCommand` when letters are commands (blackjack's
 h/s/d), `CtxText` for typing games.
 
+### Mobile-friendly controls: declare what's beyond the vocabulary
+
+Players on phones reach the arcade through a touch deck that produces exactly
+the canonical vocabulary — arrows, Confirm, Back — plus the OS soft keyboard
+when your game publishes `CtxText`. A game that resolves everything through
+`Resolve` is fully playable on touch with zero work.
+
+If your game reads inputs **beyond** the vocabulary — letter commands like
+`r` to resign, or a named key like Backspace to undo — declare them in
+`GameMeta.Controls` so touch front ends can surface each one as a tappable
+button carrying your label:
+
+```go
+Controls: []kit.ControlDecl{
+    kit.RuneControl('r', "RESIGN"),
+    kit.RuneControl('d', "DRAW"),
+    kit.KeyControl(kit.KeyBackspace, "UNDO"),
+},
+```
+
+A declaration is presentation metadata only — tapping the button delivers the
+exact declared input to `OnInput`, indistinguishable from the key, and
+declarations never change how any input resolves. Keep labels short (≤16
+runes; they render as small chips), declare at most the handful of inputs
+that matter (≤32), and don't declare what the vocabulary already covers.
+Expect players whose only inputs are the canonical actions, your declared
+controls, and (in `CtxText`) free text — if that set can't play your game,
+neither can a phone.
+
 ## Action games: held keys, raw input, geometry
 
 Terminals (and SSH) deliver only discrete key events — **there is no key-up**,

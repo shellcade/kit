@@ -204,7 +204,7 @@ fn decode_members(r: &mut Rd<'_>, n: usize, features: u32) -> Vec<Player> {
 /// `wire.Revision` — one protocol constant, asserted equal in lockstep by
 /// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
 /// parses this source line; keep the declaration on one line).
-pub(crate) const WIRE_REVISION: u16 = 5;
+pub(crate) const WIRE_REVISION: u16 = 6;
 
 /// Pack a [`Meta`] for the `meta` export — the single SDK-owned serializer.
 pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
@@ -267,7 +267,62 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
     // ignore the bytes, and the host uses it to warn on or refuse artifacts
     // declaring a revision above its own.
     w.u16(WIRE_REVISION);
+    // Trailing declared-controls section (ABI.md §4.2, spec minor): always
+    // written, count 0 when nothing is declared; validated under the same
+    // fail-fast posture as config specs.
+    if let Err(e) = validate_controls(m.controls) {
+        panic!("shellcade-kit: invalid Meta.controls: {e}");
+    }
+    w.u16(m.controls.len().min(0xffff) as u16);
+    for cd in m.controls {
+        match cd.input {
+            crate::input::Input::Char(c) => {
+                w.u8(0);
+                w.u32(c as u32);
+            }
+            crate::input::Input::Key(k) => {
+                w.u8(1);
+                w.u8(k.to_wire());
+            }
+        }
+        w.str(cd.label);
+    }
     w.b
+}
+
+/// The authoring rules for declared controls (ABI.md §4.2), mirroring Go's
+/// `wire.ValidateControls`: a printable rune (no control characters), a
+/// non-empty label of at most 16 chars, no duplicate inputs, at most 32
+/// declarations. (Input kinds and key codes are total by construction in
+/// Rust.)
+pub(crate) fn validate_controls(decls: &[crate::types::ControlDecl]) -> Result<(), String> {
+    use crate::input::Input;
+    if decls.len() > 32 {
+        return Err(format!("{} control decls (max 32)", decls.len()));
+    }
+    let mut seen: Vec<(u8, u32)> = Vec::with_capacity(decls.len());
+    for (i, cd) in decls.iter().enumerate() {
+        let id = match cd.input {
+            Input::Char(c) => {
+                if (c as u32) < 0x20 {
+                    return Err(format!("control decl {i} declares non-printable rune {c:?}"));
+                }
+                (0u8, c as u32)
+            }
+            Input::Key(k) => (1u8, k.to_wire() as u32),
+        };
+        if seen.contains(&id) {
+            return Err(format!("control decl {i} duplicates an earlier declared input"));
+        }
+        seen.push(id);
+        if cd.label.is_empty() {
+            return Err(format!("control decl {i} has an empty label"));
+        }
+        if cd.label.chars().count() > 16 {
+            return Err(format!("control decl {i} label {:?} exceeds 16 chars", cd.label));
+        }
+    }
+    Ok(())
 }
 
 /// The authoring rules for the large-room meta trailer, mirroring Go's
@@ -552,9 +607,32 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e0000000000000000000000000500";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e00000000000000000000000006000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
+    }
+
+    /// Byte-identity with the Go reference for the declared-controls section:
+    /// the hex is Go `wire.EncodeMeta` output for this exact declaration
+    /// (one rune control, one named-key control).
+    #[test]
+    fn meta_controls_matches_go_golden() {
+        use crate::input::{Input, Key};
+        use crate::types::ControlDecl;
+        let m = Meta {
+            slug: "ctlg",
+            name: "CtlG",
+            min_players: 1,
+            max_players: 2,
+            controls: &[
+                ControlDecl { input: Input::Char('r'), label: "RESIGN" },
+                ControlDecl { input: Input::Key(Key::Backspace), label: "UNDO" },
+            ],
+            ..Meta::DEFAULT
+        };
+        let golden = "040063746c67040043746c47000001000200000000000000000000000000000000000000060002000072000000060052455349474e01020400554e444f";
+        let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(got, golden, "Rust controls encoding diverges from the Go golden");
     }
 
     #[test]
@@ -684,9 +762,10 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 5 LE
-        //         = "01000000" + "6400" + "00" + "0500"
-        assert!(got.ends_with("0000010000006400000500"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-22..]);
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 6 LE
+        //         + u16 controls count 0
+        //         = "01000000" + "6400" + "00" + "0600" + "0000"
+        assert!(got.ends_with("00000100000064000006000000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-26..]);
     }
 }
 
@@ -714,9 +793,11 @@ mod tests {
 #[cfg(test)]
 mod scalar_golden {
     use super::*;
+    use crate::input::{Input, Key};
     use crate::types::{
-        Aggregation, ConfigKeySpec, ConfigType, Direction, Kind, Leaderboard, Lifecycle, Meta,
-        MetricFormat, Mode, Outcome, Player, PlayerResult, Status, CTX_FEAT_ROSTER_EPOCH,
+        Aggregation, ConfigKeySpec, ConfigType, ControlDecl, Direction, Kind, Leaderboard,
+        Lifecycle, Meta, MetricFormat, Mode, Outcome, Player, PlayerResult, Status,
+        CTX_FEAT_ROSTER_EPOCH,
     };
 
     const VECTORS: &str = include_str!("../tests/golden/scalars.txt");
@@ -802,6 +883,10 @@ mod scalar_golden {
             ctx_features: CTX_FEAT_ROSTER_EPOCH,
             heartbeat_ms: 250,
             lifecycle: Lifecycle::Ephemeral,
+            controls: &[
+                ControlDecl { input: Input::Char('r'), label: "RESIGN" },
+                ControlDecl { input: Input::Key(Key::Backspace), label: "UNDO" },
+            ],
         };
         assert_eq!(
             hex(&encode_meta(&m)),
