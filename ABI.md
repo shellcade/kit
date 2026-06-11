@@ -188,6 +188,10 @@ u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRo
 u16 heartbeatMS       0 = no declaration
 u8  lifecycle         trailing (see below); 0 resumable · 1 ephemeral · 2 resident
 u16 wireRevision      trailing (see below); 0 = unknown (the meta predates the field)
+u16 controlCount      trailing declared-controls section (see below)
+  per control: u8 kind (0 rune · 1 key)
+               · if rune: u32 rune · if key: u8 key (the input key codes, §2)
+               · str label
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
@@ -259,7 +263,7 @@ never set by the author, and declares the newest wire feature the artifact
 may assume the host understands. The ledger so far: `1` config-spec section
 · `2` large-room section + roster-epoch sentinels · `3` lifecycle byte ·
 `4` this field itself · `5` per-member ctx character section behind
-`CtxFeatCharacter`. `0` means unknown: the meta predates the field
+`CtxFeatCharacter` · `6` declared-controls section. `0` means unknown: the meta predates the field
 (revisions 1–3 existed before it, so artifacts of those eras cannot declare
 them — only `0` or values ≥ `4` are ever observed). A hand-rolled guest
 (§4.7) SHOULD stamp the revision whose features it actually uses; omitting
@@ -278,6 +282,26 @@ once the lagging host catches up. This is the mechanical anchor for §5's
 deploy-order rule: without it a too-new artifact surfaces only as every
 delta container being rejected (a frozen screen), not as a diagnosable
 version skew.
+
+**Declared-controls section (minor addition).** A trailing section after the
+wire-revision field, presence-guarded under the same rules (absent = no
+declarations; encoders that know the section always write it, count `0` when
+nothing is declared): the game's **declared extra controls** — inputs beyond
+the canonical control vocabulary (Up/Down/Left/Right via arrows-or-hjkl,
+Confirm via Enter/Space, Back via Esc/q), each paired with a short display
+label. A front end on a device that cannot produce the declared key (a touch
+screen without a physical keyboard) surfaces each declaration as a tappable
+affordance that sends **exactly the declared input**, indistinguishable from
+the key itself. Declarations are presentation metadata only: they change no
+input interpretation, and a game fully served by the canonical vocabulary
+needs none. Each entry is `u8 kind` (`0` rune · `1` key) followed by the
+input value (`u32 rune` for kind 0; `u8 key` for kind 1, the same key codes
+as the `input` export) and `str label`. An entry's size depends on its kind,
+so decoders MUST fail on an unknown kind rather than skip it (it cannot be
+framed past). Declared controls must satisfy (`wire.ValidateControls`, the
+shared rule set): a printable rune (≥ U+0020) or an assigned key code (1–9);
+a non-empty label of at most 16 runes; no duplicate inputs; at most 32
+declarations. SDKs enforce these at `meta()` encode time.
 
 ### 4.3 Frame (the delta container and its cell)
 

@@ -63,6 +63,14 @@ const (
 // platform's canonical control vocabulary, reimplemented locally.
 func Resolve(in Input, ctx InputContext) Action { return game.Resolve(in, ctx) }
 
+// RuneControl declares a printable-rune extra control for GameMeta.Controls,
+// e.g. RuneControl('r', "RESIGN").
+func RuneControl(r rune, label string) ControlDecl { return game.RuneControl(r, label) }
+
+// KeyControl declares a named-key extra control for GameMeta.Controls,
+// e.g. KeyControl(KeyBackspace, "UNDO").
+func KeyControl(k Key, label string) ControlDecl { return game.KeyControl(k, label) }
+
 // ---- rooms & results -------------------------------------------------------------
 
 type (
@@ -72,6 +80,7 @@ type (
 	GameMeta        = game.GameMeta
 	LeaderboardSpec = game.LeaderboardSpec
 	ConfigKeySpec   = game.ConfigKeySpec
+	ControlDecl     = game.ControlDecl
 	Lifecycle       = game.Lifecycle
 	ConfigType      = game.ConfigType
 	Direction       = game.Direction

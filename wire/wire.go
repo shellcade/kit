@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"unicode/utf8"
 )
 
 // Version is the ABI major version.
@@ -36,6 +37,8 @@ const Version uint32 = 2
 //	5 — per-member character section behind CtxFeatCharacter (str glyph ·
 //	    u8 ink RGB · u8 bg RGB · u8 asciiFallback after kind, both
 //	    member-bearing forms)
+//	6 — declared-controls meta section (u16 count of {u8 kind ·
+//	    u32 rune | u8 key · str label} after wireRevision)
 //
 // Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
 // only 0 or values ≥ 4 are ever observed on the wire. Any future change that
@@ -47,7 +50,7 @@ const Version uint32 = 2
 // (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
 // TestRustWireRevisionMatchesWire in this package) — the two must change in
 // lockstep.
-const Revision uint16 = 5
+const Revision uint16 = 6
 
 // Guest export names.
 const (
@@ -249,6 +252,17 @@ type Meta struct {
 	// not author-settable); hosts use it to warn on or refuse artifacts
 	// declaring a revision above their own (ABI.md §4.2, §5).
 	WireRevision uint16
+
+	// Controls is the trailing declared-controls section (spec minor
+	// addition; u16 count after WireRevision): the game's extra controls —
+	// inputs beyond the canonical vocabulary, each paired with a short
+	// display label so a front end on a device without the corresponding
+	// physical key (touch) can surface a tappable affordance that sends
+	// exactly the declared input. Presentation metadata only: a declaration
+	// changes no input interpretation. Encoders always write the section
+	// (count 0 when empty); decoders treat a payload ending after the
+	// wire-revision field as a valid older meta with no declarations.
+	Controls []ControlDecl
 }
 
 // Lifecycle values for the meta trailer.
@@ -265,6 +279,30 @@ const (
 	ConfigBool   uint8 = 2
 	ConfigJSON   uint8 = 3
 )
+
+// Named key codes carried in input payloads and ControlDecl (the InputKey
+// value space; match the SDK Key enum).
+const (
+	KeyCodeEnter     uint8 = 1
+	KeyCodeBackspace uint8 = 2
+	KeyCodeEsc       uint8 = 3
+	KeyCodeTab       uint8 = 4
+	KeyCodeUp        uint8 = 5
+	KeyCodeDown      uint8 = 6
+	KeyCodeLeft      uint8 = 7
+	KeyCodeRight     uint8 = 8
+	KeyCodeCtrlC     uint8 = 9
+)
+
+// ControlDecl is one declared extra control in the meta payload: the exact
+// input it sends — a printable rune or a named key, the same value space as
+// input events — plus a short display label (e.g. "RESIGN").
+type ControlDecl struct {
+	Kind  uint8  // InputRune or InputKey
+	Rune  rune   // the printable rune (Kind == InputRune)
+	Key   uint8  // the named key code (Kind == InputKey; KeyCodeEnter..KeyCodeCtrlC)
+	Label string // short display label, 1..16 runes
+}
 
 // ConfigSpec is one declared admin-settable config key in the meta payload.
 type ConfigSpec struct {
@@ -594,6 +632,18 @@ func EncodeMeta(m Meta) []byte {
 	// round-trips field-exact — SDK encode paths stamp Revision, and a zero
 	// value means "no declaration".
 	w.U16(m.WireRevision)
+	// Trailing declared-controls section (spec minor addition). Always
+	// written; older decoders ignore the bytes.
+	w.U16(uint16(len(m.Controls)))
+	for _, cd := range m.Controls {
+		w.U8(cd.Kind)
+		if cd.Kind == InputKey {
+			w.U8(cd.Key)
+		} else {
+			w.U32(uint32(cd.Rune))
+		}
+		w.Str(cd.Label)
+	}
 	return w.B
 }
 
@@ -650,6 +700,27 @@ func DecodeMeta(b []byte) (Meta, error) {
 	if !r.Bad && r.Off < len(r.B) {
 		m.WireRevision = r.U16()
 	}
+	// Trailing declared-controls section, presence-guarded: absent = no
+	// declarations. An unknown input kind FAILS the decode rather than being
+	// skipped — the entry's size depends on its kind, so an unknown kind
+	// breaks the framing of everything after it.
+	if !r.Bad && r.Off < len(r.B) {
+		n := int(r.U16())
+		for i := 0; i < n && !r.Bad; i++ {
+			var cd ControlDecl
+			cd.Kind = r.U8()
+			switch cd.Kind {
+			case InputRune:
+				cd.Rune = rune(r.U32())
+			case InputKey:
+				cd.Key = r.U8()
+			default:
+				return Meta{}, fmt.Errorf("wire: control decl %d has unknown input kind %d", i, cd.Kind)
+			}
+			cd.Label = r.Str()
+			m.Controls = append(m.Controls, cd)
+		}
+	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err
 	}
@@ -693,6 +764,57 @@ func ValidateConfigSpecs(specs []ConfigSpec) error {
 			if !json.Valid([]byte(cs.Schema)) {
 				return fmt.Errorf("wire: config spec %q schema is not valid JSON", cs.Key)
 			}
+		}
+	}
+	return nil
+}
+
+// MaxControls caps the declared-controls list: a control surface for the
+// handful of inputs beyond the canonical vocabulary, not a keymap dump.
+const MaxControls = 32
+
+// ControlLabelMaxRunes caps a declared control's display label.
+const ControlLabelMaxRunes = 16
+
+// ValidateControls enforces the authoring rules for declared controls, shared
+// by guest SDK encoders and host/CLI decoders (the same fail-fast posture as
+// ValidateConfigSpecs): a known input kind; a printable rune or an assigned
+// named-key code; a non-empty label of at most ControlLabelMaxRunes runes; no
+// duplicate inputs; at most MaxControls declarations.
+func ValidateControls(decls []ControlDecl) error {
+	if len(decls) > MaxControls {
+		return fmt.Errorf("wire: %d control decls (max %d)", len(decls), MaxControls)
+	}
+	type inputID struct {
+		kind uint8
+		val  uint32
+	}
+	seen := make(map[inputID]bool, len(decls))
+	for i, cd := range decls {
+		var id inputID
+		switch cd.Kind {
+		case InputRune:
+			if cd.Rune < 0x20 {
+				return fmt.Errorf("wire: control decl %d declares non-printable rune %q", i, cd.Rune)
+			}
+			id = inputID{InputRune, uint32(cd.Rune)}
+		case InputKey:
+			if cd.Key < KeyCodeEnter || cd.Key > KeyCodeCtrlC {
+				return fmt.Errorf("wire: control decl %d declares unassigned key code %d", i, cd.Key)
+			}
+			id = inputID{InputKey, uint32(cd.Key)}
+		default:
+			return fmt.Errorf("wire: control decl %d has unknown input kind %d", i, cd.Kind)
+		}
+		if seen[id] {
+			return fmt.Errorf("wire: control decl %d duplicates an earlier declared input", i)
+		}
+		seen[id] = true
+		if cd.Label == "" {
+			return fmt.Errorf("wire: control decl %d has an empty label", i)
+		}
+		if utf8.RuneCountInString(cd.Label) > ControlLabelMaxRunes {
+			return fmt.Errorf("wire: control decl %d label %q exceeds %d runes", i, cd.Label, ControlLabelMaxRunes)
 		}
 	}
 	return nil

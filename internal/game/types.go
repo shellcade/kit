@@ -223,6 +223,35 @@ type GameMeta struct {
 	// resident-with-MinPlayers>1 are authoring bugs and panic at meta
 	// encode time.
 	Lifecycle Lifecycle
+
+	// Controls optionally declares the game's extra controls: inputs beyond
+	// the canonical vocabulary (a raw rune like 'r', or a named key like
+	// KeyBackspace), each with a short display label. Front ends on devices
+	// without the corresponding physical key (touch) surface each
+	// declaration as a tappable affordance that sends exactly the declared
+	// input — presentation metadata only; declarations change no input
+	// interpretation. Nil/empty means no declarations, and a game fully
+	// served by the canonical vocabulary needs none. Invalid declarations
+	// are an authoring bug and panic at meta encode time.
+	Controls []ControlDecl
+}
+
+// ControlDecl declares one extra control: the exact Input it sends (a
+// printable rune or a named key) and a short display label of at most 16
+// runes. Build with RuneControl / KeyControl.
+type ControlDecl struct {
+	Input Input
+	Label string
+}
+
+// RuneControl declares a printable-rune control, e.g. RuneControl('r', "RESIGN").
+func RuneControl(r rune, label string) ControlDecl {
+	return ControlDecl{Input: Input{Kind: InputRune, Rune: r}, Label: label}
+}
+
+// KeyControl declares a named-key control, e.g. KeyControl(KeyBackspace, "UNDO").
+func KeyControl(k Key, label string) ControlDecl {
+	return ControlDecl{Input: Input{Kind: InputKey, Key: k}, Label: label}
 }
 
 // Lifecycle is the room end-of-life declaration.

@@ -38,6 +38,23 @@ impl Key {
             _ => return None,
         })
     }
+
+    /// Key → wire value (ABI.md §2): the inverse of `from_wire`, used when
+    /// the SDK itself encodes an input (declared controls in the meta
+    /// payload). Internal key additions must update both directions.
+    pub(crate) fn to_wire(self) -> u8 {
+        match self {
+            Key::Enter => 1,
+            Key::Backspace => 2,
+            Key::Esc => 3,
+            Key::Tab => 4,
+            Key::Up => 5,
+            Key::Down => 6,
+            Key::Left => 7,
+            Key::Right => 8,
+            Key::CtrlC => 9,
+        }
+    }
 }
 
 /// The SDK-neutral input event (Go's `kit.Input`, as a sum type).
