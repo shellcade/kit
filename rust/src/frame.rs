@@ -271,9 +271,8 @@ impl Default for Frame {
 }
 
 /// The one ready-made cell of a member's character tile: the glyph styled
-/// with the resolved ink and background (player-character capability,
-/// shellcade — every catalogue glyph is width 1, so games place a character
-/// with zero width logic). The default [`Character`] (the game's meta does
+/// with the resolved ink and background (see ABI.md §4.1 — every admitted
+/// glyph is width 1, so games place a character with zero width logic). The default [`Character`] (the game's meta does
 /// not declare [`CTX_FEAT_CHARACTER`]) yields a blank cell.
 ///
 /// [`CTX_FEAT_CHARACTER`]: crate::types::CTX_FEAT_CHARACTER
