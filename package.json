@@ -1,6 +1,6 @@
 {
   "name": "kit",
-  "version": "2.11.0",
+  "version": "2.11.1",
   "private": true,
   "description": "Version management for the shellcade gamekit (Go module + CLI). Versions and changelogs are driven by changesets; binaries by GoReleaser.",
   "scripts": {
