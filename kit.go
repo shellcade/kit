@@ -89,7 +89,14 @@ type (
 	Status          = game.Status
 	PlayerResult    = game.PlayerResult
 	Result          = game.Result
+
+	// ScoreKeeper standardises live/disconnect/periodic leaderboard posting.
+	ScoreKeeper = game.ScoreKeeper
+	Cadence     = game.Cadence
 )
+
+// NewScoreKeeper constructs a ScoreKeeper with the given auto-post cadence.
+func NewScoreKeeper(c Cadence) *ScoreKeeper { return game.NewScoreKeeper(c) }
 
 const (
 	ModeQuick   = game.ModeQuick
@@ -120,6 +127,9 @@ const (
 	Integer      = game.Integer
 	Decimal      = game.Decimal
 	Duration     = game.Duration
+
+	OnImprove = game.OnImprove
+	OnChange  = game.OnChange
 
 	StatusFinished = game.StatusFinished
 	StatusDNF      = game.StatusDNF
