@@ -3,6 +3,7 @@ module github.com/shellcade/kit/v2
 go 1.25.0
 
 require (
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/extism/go-pdk v1.1.3
 	github.com/extism/go-sdk v1.7.1
 	github.com/google/uuid v1.6.0
