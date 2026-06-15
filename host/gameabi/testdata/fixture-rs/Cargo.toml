@@ -1,0 +1,35 @@
+[package]
+name = "fixture-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# A second fixture GUEST written in Rust, implemented from the public ABI
+# contract (kit/ABI.md + wire.go) alone. It proves the shellcade game ABI is
+# language-neutral: the same host adapter and conformance harness run it green.
+#
+# Build (dev profile — `make fixture-rs-wasm` from the repo root):
+#   cargo build --release --target wasm32-wasip1
+# The artifact lands at target/wasm32-wasip1/release/fixture_rs.wasm and is
+# committed alongside as fixture-rs.wasm.
+
+[lib]
+# cdylib on wasm32-wasip1 produces a WASI reactor: a `memory` export and an
+# `_initialize` export, exactly like the TinyGo c-shared fixture. The 8 ABI
+# entry points are added via #[no_mangle] extern "C" exports.
+crate-type = ["cdylib"]
+
+[dependencies]
+# extism-pdk supplies only the kernel plumbing (input/output regions, the
+# Memory allocator over extism:host/env). The 11 shellcade host functions are
+# declared directly as raw wasm imports in src/lib.rs, because the PDK's
+# #[host_fn] macro allocates EVERY argument into memory and passes an offset —
+# wrong for our raw i64 scalar params (playerIdx, log level, input context).
+extism-pdk = "1.4"
+
+[profile.release]
+# Match the dev-profile intent of the TinyGo fixture: small, fast-to-build.
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"

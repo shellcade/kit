@@ -1,0 +1,4 @@
+# Build outputs are not committed (the canonical artifact is copied to
+# target/wasm32-wasip1/release/fixture_rs_kit.wasm by `make fixture-rs-kit-wasm`).
+target/
+Cargo.lock

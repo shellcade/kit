@@ -1,0 +1,31 @@
+# fixture-rs-kit — the conformance fixture built ON the shellcade-kit Rust SDK
+# crate (kit/rust). It JOINS the hand-rolled fixture-rs (which stays SDK-free as
+# the proof that ABI.md is implementable from the document alone): this one
+# proves the SDK itself passes the server's own acceptance gate, including
+# hibernation byte-identity and fault containment.
+#
+# Build recipe: `make fixture-rs-kit-wasm` (see Makefile; the committed
+# fixture-rs-kit.wasm is what CI tests against — no cargo in private CI).
+# The dependency pins the kit release tag; before that tag exists (or to test
+# unreleased SDK changes), override with a patch:
+#   cargo build --release --target wasm32-wasip1 \
+#     --config 'patch."https://github.com/shellcade/kit".shellcade-kit.path="<kit checkout>/rust"'
+
+[package]
+name = "fixture-rs-kit"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+shellcade-kit = { git = "https://github.com/shellcade/kit", tag = "v2.2.0" }
+
+# The artifact contract: profiles apply only at this (leaf) crate.
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"
