@@ -58,7 +58,12 @@ func TestCheckAcceptsGameDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := check(dir); err != nil {
+	if err := check(dir, false); err != nil {
 		t.Fatalf("check <gamedir>: %v", err)
+	}
+	// --require-leaderboard is an opt-in catalog publishing policy: the parity
+	// fixture declares no leaderboard, so the strict check must fail it.
+	if err := check(dir, true); err == nil {
+		t.Fatalf("check --require-leaderboard should fail a game with no declared leaderboard")
 	}
 }

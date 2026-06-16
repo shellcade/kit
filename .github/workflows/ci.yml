@@ -8,15 +8,6 @@ on:
     # Nightly (07:00 UTC): keep the slow release-profile artifact path honest.
     - cron: "0 7 * * *"
 
-# Pinned shellcade-kit toolchain: the author binary the arcade ships, attached
-# to this repo's matching release. Bump the version AND the linux/amd64 sha
-# (from that release's checksums.txt) together when adopting a new toolchain.
-# The kit-pin job below fails CI when this pin falls behind the newest
-# published binary release, so drift can't accumulate silently again.
-env:
-  SHELLCADE_KIT_VERSION: "2.11.0"
-  SHELLCADE_KIT_SHA256: "ab459f4a08cef74b2c6bf709a35b07b75f1113ad7af4450250443e62ddb15eee"
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -49,9 +40,10 @@ jobs:
           ! grep -rn "shellcade/shellcade" --include="*.go" . || (echo "FORBIDDEN private import" && exit 1)
 
   # Author journey: prove the experience an author actually has — scaffold a
-  # fresh game with the pinned shellcade-kit, build the dev-profile wasm, and
-  # run the arcade's acceptance check on it. The scaffold pins a kit version, so
-  # we replace it with the PR's checkout to gate THIS repo's code, not a release.
+  # fresh game with shellcade-kit built from this PR's source, build the
+  # dev-profile wasm, and run the arcade's acceptance check on it. The scaffold
+  # pins a released kit version, so we replace it with the PR's checkout to gate
+  # THIS repo's code, not a release.
   wasm:
     runs-on: ubuntu-latest
     steps:
@@ -62,20 +54,11 @@ jobs:
       - uses: acifani/setup-tinygo@v2
         with: { tinygo-version: "0.41.1" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
-      - name: fetch pinned shellcade-kit (sha256-verified)
+      - name: build shellcade-kit from this PR's source
         run: |
           set -euo pipefail
-          ver="${SHELLCADE_KIT_VERSION}"
-          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
-          base="https://github.com/shellcade/kit/releases/download/v${ver}"
-          curl -fsSL -o "${asset}" "${base}/${asset}"
-          # Verify against the exact sha we pin, then cross-check the release's
-          # own checksums.txt agrees (defence in depth against a swapped asset).
-          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
-          curl -fsSL -o checksums.txt "${base}/checksums.txt"
-          grep " ${asset}\$" checksums.txt | sha256sum -c -
-          tar -xzf "${asset}" shellcade-kit
-          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+          go -C kit build -o "${RUNNER_TEMP}/shellcade-kit" ./cmd/shellcade-kit
+          sudo install "${RUNNER_TEMP}/shellcade-kit" /usr/local/bin/shellcade-kit
           shellcade-kit version
       - name: scaffold a fresh game
         run: shellcade-kit new cigame
@@ -94,10 +77,10 @@ jobs:
           shellcade-kit check cigame.wasm
 
   # Rust author journey: the Rust mirror of the wasm job above — scaffold with
-  # the pinned shellcade-kit (`new --rust`), point the scaffold's crate dep at
-  # the PR's checkout (the cargo equivalent of `go mod edit -replace`), build
-  # the release artifact, and run the arcade's acceptance check on it. This is
-  # the gate that catches scaffolder/crate drift at PR time.
+  # shellcade-kit built from this PR's source (`new --rust`), point the
+  # scaffold's crate dep at the PR's checkout (the cargo equivalent of `go mod
+  # edit -replace`), build the release artifact, and run the arcade's acceptance
+  # check on it. This is the gate that catches scaffolder/crate drift at PR time.
   wasm-rust:
     runs-on: ubuntu-latest
     steps:
@@ -105,18 +88,13 @@ jobs:
         with: { path: kit }
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-wasip1 }
-      - name: fetch pinned shellcade-kit (sha256-verified)
+      - uses: actions/setup-go@v5
+        with: { go-version-file: kit/go.mod }
+      - name: build shellcade-kit from this PR's source
         run: |
           set -euo pipefail
-          ver="${SHELLCADE_KIT_VERSION}"
-          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
-          base="https://github.com/shellcade/kit/releases/download/v${ver}"
-          curl -fsSL -o "${asset}" "${base}/${asset}"
-          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
-          curl -fsSL -o checksums.txt "${base}/checksums.txt"
-          grep " ${asset}\$" checksums.txt | sha256sum -c -
-          tar -xzf "${asset}" shellcade-kit
-          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+          go -C kit build -o "${RUNNER_TEMP}/shellcade-kit" ./cmd/shellcade-kit
+          sudo install "${RUNNER_TEMP}/shellcade-kit" /usr/local/bin/shellcade-kit
           shellcade-kit version
       - name: scaffold a fresh Rust game
         run: shellcade-kit new --rust cigame
@@ -173,18 +151,12 @@ jobs:
       - uses: acifani/setup-tinygo@v2
         with: { tinygo-version: "0.41.1" }
       - run: sudo apt-get update && sudo apt-get install -y binaryen
-      - name: fetch pinned shellcade-kit (sha256-verified)
+      - name: build shellcade-kit from this PR's source
         run: |
           set -euo pipefail
-          ver="${SHELLCADE_KIT_VERSION}"
-          asset="shellcade-kit_${ver}_linux_amd64.tar.gz"
-          base="https://github.com/shellcade/kit/releases/download/v${ver}"
-          curl -fsSL -o "${asset}" "${base}/${asset}"
-          echo "${SHELLCADE_KIT_SHA256}  ${asset}" | sha256sum -c -
-          curl -fsSL -o checksums.txt "${base}/checksums.txt"
-          grep " ${asset}\$" checksums.txt | sha256sum -c -
-          tar -xzf "${asset}" shellcade-kit
-          sudo install shellcade-kit /usr/local/bin/shellcade-kit
+          go -C kit build -o "${RUNNER_TEMP}/shellcade-kit" ./cmd/shellcade-kit
+          sudo install "${RUNNER_TEMP}/shellcade-kit" /usr/local/bin/shellcade-kit
+          shellcade-kit version
       - name: scaffold and release-build (-opt=2) against this PR's kit
         run: |
           set -euo pipefail

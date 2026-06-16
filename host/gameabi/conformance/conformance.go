@@ -341,6 +341,33 @@ func (rn *run) verdicts(rep Report) []Verdict {
 	return vs
 }
 
+// LeaderboardVerdict is the publishing-policy gate that every PUBLISHED game must
+// declare a leaderboard so its results are recorded and ranked. It is NOT part of
+// the generic ABI conformance verdicts (which also run against minimal test
+// fixtures that legitimately declare no board): callers that enforce the catalog
+// publishing policy — `shellcade-kit check --require-leaderboard`, used by the
+// games-repo CI — append it to the Report before checking Pass().
+//
+// It is deliberately STATIC (a check on GameMeta), not a behavioral "posts on
+// leave" assertion. A mid-play disconnect in a round-based multiplayer game is
+// recorded at round SETTLEMENT (the leaver ranked dnf), not necessarily on the
+// leave callback, and the remaining player may keep playing — so a behavioral
+// gate false-fails correct games. The disconnect-save and continuous
+// periodic-save behavior is specified in game-sdk and verified by each game's
+// own tests.
+func LeaderboardVerdict(meta sdk.GameMeta) Verdict {
+	declared := meta.Leaderboard != nil
+	v := Verdict{Name: "leaderboard declared", OK: declared, Limit: "Meta().Leaderboard set", Step: -1}
+	if declared {
+		v.Measured = "declared"
+	} else {
+		v.Measured = "missing"
+		v.Detail = fmt.Sprintf("game %q declares no leaderboard; every published game must declare a LeaderboardSpec "+
+			"in GameMeta so its results are recorded and ranked", meta.Slug)
+	}
+	return v
+}
+
 // ---- helpers -----------------------------------------------------------------
 
 func inputFor(s Step) sdk.Input {

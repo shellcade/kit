@@ -67,7 +67,16 @@ func main() {
 			fmt.Printf("Scaffolded %s/ — try it now:\n\n  cd %s && go mod tidy && go run .\n", name, name)
 		}
 	case "check":
-		if err := check(path); err != nil {
+		// check [--require-leaderboard] <gamedir|game.wasm>
+		fs := flag.NewFlagSet("check", flag.ExitOnError)
+		requireLB := fs.Bool("require-leaderboard", false, "also fail unless the game declares a leaderboard (catalog publishing policy)")
+		if err := fs.Parse(os.Args[2:]); err != nil {
+			usage()
+		}
+		if fs.NArg() != 1 {
+			usage()
+		}
+		if err := check(fs.Arg(0), *requireLB); err != nil {
 			fmt.Fprintln(os.Stderr, "FAIL:", err)
 			os.Exit(1)
 		}
@@ -193,7 +202,7 @@ func newRoom(path string, seed int64, seedSet bool, heartbeat time.Duration, cfg
 // argument may be a built .wasm or the game directory (built first), so
 // `shellcade-kit check .` is the one-command merge-gate rehearsal for any
 // source language.
-func check(arg string) error {
+func check(arg string, requireLeaderboard bool) error {
 	path, _, cleanup, err := resolveArtifact(arg)
 	if err != nil {
 		return err
@@ -212,6 +221,12 @@ func check(arg string) error {
 	rep, err := conformance.Run(path, gameabi.Options{}, defaultCheckScript(meta))
 	if err != nil {
 		return err
+	}
+	// Catalog publishing policy (opt-in): every published game must declare a
+	// leaderboard. Not part of generic ABI conformance, so minimal fixtures and
+	// `shellcade-kit check` without the flag are unaffected.
+	if requireLeaderboard {
+		rep.Verdicts = append(rep.Verdicts, conformance.LeaderboardVerdict(meta))
 	}
 	printReport(rep)
 	if !rep.Pass() {

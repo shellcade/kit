@@ -36,14 +36,16 @@ Versions/changelogs are driven by **changesets** — THIS repo is the single
 version authority. Every user-visible change adds a `.changeset/*.md` (run
 `npx changeset`); merging to main lets the changesets action open a Version
 Packages PR; merging THAT pushes the `vX.Y.Z` tag, and the tag IS the module
-release.
+release. Never hand-edit CHANGELOG.md or push tags manually.
 
-**Lockstep**: `shellcade-kit` adopts this repo's version number. After a kit
-version tags, the private repo follows (`go get …/kit@vX.Y.Z`, tag `vX.Y.Z`
-there) and its GoReleaser attaches the binaries + Homebrew cask to THIS repo's
-existing `vX.Y.Z` release — it must NEVER create new tags here (that pollutes
-the module's version space). A shellcade-kit-only fix still rides a kit patch
-bump. Never hand-edit CHANGELOG.md or push tags manually.
+The `vX.Y.Z` tag also drives the `shellcade-kit` **CLI binary** release: the
+`release-cli.yml` workflow runs GoReleaser (`.goreleaser.yaml`) to build
+`./cmd/shellcade-kit`, attach the cross-platform archives + checksums to that
+release, publish the Homebrew cask (`brew install shellcade/tap/shellcade-kit`),
+and then fire a `kit-released` `repository_dispatch` to the consumer repos so
+they can re-pin to the new toolchain. The binary therefore embeds the same kit
+version it ships under — no separate version authority, and a CLI-only fix
+still rides a kit patch bump.
 
 ## Build & test
 
