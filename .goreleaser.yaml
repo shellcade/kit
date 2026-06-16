@@ -18,7 +18,7 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
-    ldflags: ["-s -w"]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
 
 archives:
   - formats: [tar.gz]
