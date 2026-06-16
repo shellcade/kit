@@ -1,0 +1,13 @@
+seed: 1234
+seats: 2
+steps:
+  - shot: start
+  - rune: "a"
+  - key: enter
+  - seat: 1
+  - text: "ok"
+  - advance: 250ms
+  - wake:
+  - shot: mid
+  - shot: only-one
+    seats: [1]

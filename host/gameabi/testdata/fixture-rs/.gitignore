@@ -1,0 +1,4 @@
+# Cargo build output. The committed artifact is fixture-rs.wasm (copied from
+# target/wasm32-wasip1/release/fixture_rs.wasm by `make fixture-rs-wasm`).
+/target
+Cargo.lock
