@@ -1,0 +1,83 @@
+# GoReleaser for the shellcade-kit CLI binary, built from THIS module
+# (./cmd/shellcade-kit). Produces the cross-platform archives, checksums, and
+# the Homebrew cask, and attaches them to this repo's vX.Y.Z release.
+#
+# Trigger: the vX.Y.Z tag pushed by the changesets publish step
+# (scripts/tag-release.sh) — see .github/workflows/release-cli.yml. The tag IS
+# the kit module release, so the binary it builds embeds that same kit version.
+#
+# Requires a token (KIT_RELEASE_TOKEN in the workflow) with contents:write on
+# shellcade/kit (release assets) AND shellcade/homebrew-tap (cask push).
+version: 2
+project_name: shellcade-kit
+
+builds:
+  - id: shellcade-kit
+    main: ./cmd/shellcade-kit
+    binary: shellcade-kit
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
+
+# Homebrew tap: `brew install shellcade/tap/shellcade-kit`. Publishing needs the
+# release token to ALSO have contents:write on shellcade/homebrew-tap. The
+# post-install hook strips any quarantine attribute until notarization is on
+# (harmless afterwards).
+homebrew_casks:
+  - name: shellcade-kit
+    repository:
+      owner: shellcade
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: https://github.com/shellcade/kit
+    description: "shellcade game developer kit: scaffold, verify, and play wasm games"
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/shellcade-kit"]
+          end
+
+# macOS signing + notarization (quill, runs fine on the Linux runner). Activates
+# only when the Apple secrets are present; until then releases ship unsigned and
+# brew users are unaffected (brew downloads skip the quarantine attribute).
+# Required (human steps): Apple Developer Program membership; a Developer ID
+# Application certificate exported as base64 p12 (MACOS_SIGN_P12 /
+# MACOS_SIGN_PASSWORD); an App Store Connect API key (MACOS_NOTARY_ISSUER_ID /
+# MACOS_NOTARY_KEY_ID / MACOS_NOTARY_KEY = the .p8 contents).
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [shellcade-kit]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
+# Attach the binaries + checksums to this repo's own vX.Y.Z release (the tag the
+# changesets flow pushed). GoReleaser creates the GitHub release if the publish
+# step only pushed the git tag.
+release:
+  github:
+    owner: shellcade
+    name: kit
+  name_template: "shellcade-kit v{{ .Version }}"

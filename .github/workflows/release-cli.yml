@@ -1,0 +1,58 @@
+# Publishes the shellcade-kit CLI binary on a vX.Y.Z tag.
+#
+# The tag is pushed by the changesets publish step (release.yml ->
+# scripts/tag-release.sh) and IS the kit module release. This workflow runs
+# GoReleaser to build ./cmd/shellcade-kit and attach the cross-platform
+# archives + checksums + Homebrew cask to that release, then notifies the
+# downstream consumers so they can re-pin to the new toolchain.
+name: Release CLI
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Token with contents:write on shellcade/kit (release assets) AND
+          # shellcade/homebrew-tap (cask push).
+          GITHUB_TOKEN: ${{ secrets.KIT_RELEASE_TOKEN }}
+          # macOS signing/notarization — blank until the Apple secrets exist,
+          # which leaves notarize disabled (the isEnvSet gate in .goreleaser.yaml).
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+  # Tell the consumers a new shellcade-kit binary shipped so they can bump their
+  # pinned toolchain. client_payload.version is the released tag (e.g. v2.13.0).
+  notify-consumers:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: [shellcade/shellcade, shellcade/games]
+    steps:
+      - name: dispatch kit-released to ${{ matrix.repo }}
+        env:
+          # Cross-repo token: needs contents:write (repository_dispatch) on the
+          # target repos. Reuses the same secret the release step uses.
+          GH_TOKEN: ${{ secrets.KIT_RELEASE_TOKEN }}
+        run: |
+          gh api "repos/${{ matrix.repo }}/dispatches" \
+            -f event_type=kit-released \
+            -F "client_payload[version]=${GITHUB_REF_NAME}"
