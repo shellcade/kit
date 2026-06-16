@@ -29,4 +29,4 @@ jobs:
           # A PAT (contents:write + pull-requests:write on this repo) lets the
           # action create the Version Packages PR even while the org forbids
           # Actions-created PRs; falls back to the Actions token otherwise.
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.KIT_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}

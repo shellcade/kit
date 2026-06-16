@@ -9,6 +9,11 @@ name: Release CLI
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag to (re)publish, e.g. v2.12.1"
+        required: true
 
 permissions:
   contents: read
@@ -18,7 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - uses: goreleaser/goreleaser-action@v6
@@ -55,4 +62,4 @@ jobs:
         run: |
           gh api "repos/${{ matrix.repo }}/dispatches" \
             -f event_type=kit-released \
-            -F "client_payload[version]=${GITHUB_REF_NAME}"
+            -F "client_payload[version]=${{ github.event.inputs.tag || github.ref_name }}"
