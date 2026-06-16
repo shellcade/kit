@@ -35,6 +35,12 @@ import (
 	"github.com/shellcade/kit/v2/host/sdk"
 )
 
+// version is the binary's own version. GoReleaser overrides it via
+// -ldflags "-X main.version={{.Version}}" so release binaries report the kit
+// tag they ship under; in-tree `go build`/`go run` leaves it "dev" and
+// printVersion falls back to the module version from build info.
+var version = "dev"
+
 func main() {
 	if len(os.Args) >= 2 && os.Args[1] == "version" {
 		printVersion()
@@ -115,6 +121,16 @@ func printVersion() {
 			if d.Path == "github.com/shellcade/kit/v2" {
 				kitv = d.Version
 			}
+		}
+	}
+	// A real -ldflags value (the GoReleaser release path) wins over the empty
+	// bi.Main.Version that in-tree `go build` produces. Under lockstep the tag
+	// IS the kit module release, so the binary ships under that kit version too
+	// — adopt it for the kit line when build info couldn't supply one.
+	if version != "" && version != "dev" {
+		own = version
+		if kitv == "(unknown)" {
+			kitv = version
 		}
 	}
 	fmt.Printf("shellcade-kit %s\nkit           %s (github.com/shellcade/kit/v2)\nabi           v%d\n", own, kitv, gameabi.Version)
