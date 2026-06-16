@@ -3,3 +3,6 @@ go.work*
 node_modules/
 dist/
 target/
+
+# Conformance/host test fixtures are committed (small, deterministic ABI inputs).
+!host/gameabi/testdata/**/*.wasm
