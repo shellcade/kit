@@ -792,9 +792,18 @@ func (h *wasmHandler) invoke(r sdk.Room, name string, roster []sdk.Player, extra
 	defer cancel()
 	hostStart := h.cbHostNanos // per-callback host-time delta baseline
 	h.hostIOExpired = false
+	// CPU-steal detection (detection only — see steal.go). Sample host-stolen
+	// CPU at the callback BOUNDARIES so the read is off the hot per-instruction
+	// path: once before the guest runs, once after it returns/is killed. If the
+	// counter advanced across the window, the VM was being stolen from while
+	// this callback ran. stealOK guards a host without the signal (non-Linux,
+	// or any /proc/stat read/parse failure) — then no steal metric is recorded.
+	stealPre, stealOK := stealReader()
 	cbStart := time.Now()
 	exit, _, err := h.inst.CallWithContext(ctx, name, payload)
 	dur := time.Since(cbStart)
+	stealPost, stealPostOK := stealReader()
+	stealAdvanced := stealOK && stealPostOK && stealPost > stealPre
 	h.cbTotalNanos += dur.Nanoseconds()
 	hostDelta := h.cbHostNanos - hostStart
 	h.lastExit, h.lastErr = exit, err
@@ -815,6 +824,16 @@ func (h *wasmHandler) invoke(r sdk.Room, name string, roster []sdk.Player, extra
 			m.GameHostIODeadline(h.game.meta.Slug, name)
 		} else if deadlined {
 			m.GameCallbackDeadline(h.game.meta.Slug, name)
+			// Detection only: alongside (never instead of) the deadline record,
+			// if host-stolen CPU advanced across this killed callback's window,
+			// surface it via the non-breaking optional StealMetrics seam. The
+			// kill still stands and still feeds the fault path below — this is a
+			// correlation signal for the future exonerate case, not a decision.
+			if stealAdvanced {
+				if sm, ok := m.(StealMetrics); ok {
+					sm.GameCallbackStealDeadline(h.game.meta.Slug, name)
+				}
+			}
 		}
 	}
 	if err != nil || exit != 0 {
