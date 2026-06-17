@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         # The tag push in scripts/tag-release.sh must use a PAT, not the
         # default GITHUB_TOKEN: GitHub does NOT fire workflow triggers for tags
         # pushed with GITHUB_TOKEN, so the downstream GoReleaser/Homebrew/notify
@@ -22,13 +22,13 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.KIT_RELEASE_TOKEN }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: 22 }
       - run: npm ci
       # With pending changesets: opens/updates the "Version Packages" PR.
       # With none (the PR just merged): runs the publish script, which pushes
       # the vX.Y.Z tag — and the tag triggers the GoReleaser workflow.
-      - uses: changesets/action@v1
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: npm run version # changeset version + sync rust/Cargo.toml (lockstep)
           publish: npm run release
