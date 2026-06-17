@@ -355,6 +355,71 @@ See [pokies](https://github.com/shellcade/games/tree/main/games/bcook/pokies)
 in the catalog: it posts a player's new `peak` after a winning spin — the KV
 write keeps the wallet durable; the `Post` is what reaches the board.
 
+### Bank scores the easy way: `ScoreKeeper`
+
+Doing the above by hand is a footgun: you have to remember to `Post` on the
+right events, re-post on disconnect so a mid-run leaver still scores, and — for
+games that never end — keep posting an abandoned-but-ticking world. Miss one
+and the board silently lies. **Prefer `kit.ScoreKeeper` over hand-rolled
+`r.Post` calls** (and prefer its `PersistBest`/`PersistWallet` helpers over
+hand-rolled KV writes); it standardises all three post points and gets the
+merge rules right. Hold one keeper on the room:
+
+```go
+type myRoom struct {
+    sk *kit.ScoreKeeper
+}
+
+func New() kit.Game { return &myRoom{sk: kit.NewScoreKeeper(kit.OnImprove)} }
+
+// During play — record each player's current metric. The keeper posts only
+// when the cadence says to, so this is safe to call freely:
+rm.sk.Record(r, p, run.kills)
+
+// On disconnect — bank their progress so a leaver still ranks:
+func (rm *myRoom) OnLeave(r kit.Room, p kit.Player) {
+    rm.sk.FlushLeave(r, p, kit.StatusDNF)
+}
+```
+
+**Cadence** controls when `Record` auto-posts (it always posts the first time
+it sees a player):
+
+- **`kit.OnImprove`** posts only when the new metric beats the last posted
+  value — the right choice for monotonic high-water boards (peak credits, best
+  survival time, kill count).
+- **`kit.OnChange`** posts whenever the metric changes from the last posted
+  value (up *or* down) — for boards that track a current, fluctuating figure.
+
+Live `Record` posts always carry `StatusFinished`. `FlushLeave(r, p, status)`
+posts the player's last tracked metric with the status you pass (normally
+`kit.StatusDNF`) and stops tracking them; calling it for an untracked player is
+a no-op. The leaderboard reader ranks DNF rows the same as finished ones, so on
+a [lower-is-better](#scores-and-leaderboards) board pass a fair full-run metric
+(par-extrapolated), never a raw partial — a half-played run would otherwise top
+the board.
+
+**Continuous / never-ending games** (anything `LifecycleResident`, see
+[Choosing a lifecycle](#choosing-a-lifecycle)) also call
+`FlushAll(r, status)` from `OnWake` on a throttled interval, so an abandoned
+world that is still ticking keeps recording. `FlushAll` posts every tracked
+player's current metric in deterministic `AccountID` order. The keeper holds no
+goroutines or timers — periodic flushing is driven by your own `OnWake`
+heartbeat — so behaviour stays deterministic under hibernation and replay, and
+a single keeper is safe for the room actor.
+
+The keeper also wraps the durable-KV side so a [store blip](#durable-state-the-per-player-kv)
+cannot clobber a real value at merge time:
+
+- **`sk.PersistBest(r, p, key, value)`** writes a high-water value with
+  `MergeMax` — for session *resume*, separate from the board.
+- **`sk.PersistWallet(r, p, balanceKey, balance, peakKey, peak)`** writes a
+  carryable balance with `MergeSum` and a peak with `MergeMax` in one call —
+  the casino-style wallet pattern, no per-game `persistWallet` helper needed.
+
+These feed only the KV (for resume); the *board* is still fed solely by
+`Record`/`FlushLeave`/`FlushAll`.
+
 ## Durable state: the per-player KV
 
 ```go
