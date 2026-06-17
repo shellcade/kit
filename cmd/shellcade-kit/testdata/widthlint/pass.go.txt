@@ -1,0 +1,21 @@
+// Passing fixture for the wide-glyph width-contract lint: every wide writer is
+// handed a base code point whose East-Asian-Width is Wide or Fullwidth, so the
+// reserved two columns match what the terminal advances.
+//
+// (Stored as .go.txt so `go build ./...`/`go vet ./...` over the command don't
+// try to compile a fixture with no real package; the lint parses it as Go.)
+package widthlint
+
+import "github.com/shellcade/kit/v2"
+
+func draw(f *kit.Frame) {
+	f.SetWide(0, 0, '個', kit.Style{})          // U+500B CJK — EAW W
+	f.SetWide(1, 0, '７', kit.Style{})          // U+FF17 fullwidth seven — EAW F
+	f.SetWide(2, 0, '☔', kit.Style{})          // U+2614 umbrella — EAW W
+	f.SetGraphemeWide(3, 0, "❤️", kit.Style{}) // U+2764 base — EAW W
+	f.SetGraphemeWide(4, 0, "💎", kit.Style{}) // U+1F48E gem — EAW W
+
+	// Non-literal bases are unprovable and intentionally NOT flagged.
+	r := '7'
+	f.SetWide(5, 0, r, kit.Style{})
+}

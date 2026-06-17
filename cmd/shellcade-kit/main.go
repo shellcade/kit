@@ -2,7 +2,8 @@
 //
 //	shellcade-kit version                              print kit/ABI compatibility info
 //	shellcade-kit new   [--rust] [--license ID] <name> scaffold a complete, catalog-submittable kit game
-//	shellcade-kit check <gamedir|game.wasm>            run the conformance harness (limits ON) + print a report
+//	shellcade-kit check <gamedir|game.wasm>            lint source (Go dirs) + run the conformance harness (limits ON)
+//	shellcade-kit lint-width <path>...                 lint source for wide-glyph width-contract violations only
 //	shellcade-kit play  <gamedir|game.wasm> [flags]    play the game in a local 80x24 terminal room
 //	shellcade-kit smoke <gamedir|game.wasm>            run the game's smoke.yaml and write the shot files
 //
@@ -25,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -86,6 +88,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "FAIL:", err)
 			os.Exit(1)
 		}
+	case "lint-width":
+		// lint-width <path>...: source lint, no build — accepts files and dirs.
+		if err := lintWidth(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "lint-width:", err)
+			os.Exit(1)
+		}
 	case "meta":
 		if err := printMeta(path); err != nil {
 			fmt.Fprintln(os.Stderr, "shellcade-kit:", err)
@@ -137,7 +145,7 @@ func printVersion() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: shellcade-kit version | new [--rust] [--license ID] <name> | check <gamedir|game.wasm> | meta <game.wasm> | play <gamedir|game.wasm> [flags] | smoke <gamedir|game.wasm> [--out dir]")
+	fmt.Fprintln(os.Stderr, "usage: shellcade-kit version | new [--rust] [--license ID] <name> | check <gamedir|game.wasm> | lint-width <path>... | meta <game.wasm> | play <gamedir|game.wasm> [flags] | smoke <gamedir|game.wasm> [--out dir]")
 	os.Exit(2)
 }
 
@@ -217,8 +225,22 @@ func newRoom(path string, seed int64, seedSet bool, heartbeat time.Duration, cfg
 // returns an error (non-zero exit) when any budget verdict fails. The
 // argument may be a built .wasm or the game directory (built first), so
 // `shellcade-kit check .` is the one-command merge-gate rehearsal for any
-// source language.
+// source language. For a Go game directory it first runs the wide-glyph
+// width-contract lint over the source (see lintWidth) — a class of corruption
+// conformance cannot observe because it never faults.
 func check(arg string, requireLeaderboard bool) error {
+	// Source-level gate first: a wide-glyph width-contract violation desyncs
+	// every column to its right (the pokies production corruption) yet never
+	// faults, so conformance alone cannot catch it. When the argument is a Go
+	// game directory, lint its source before the (slower) build+conformance run
+	// so the offending base code point is reported up front. Rust source is not
+	// AST-scanned here; the standalone `lint-width` covers explicit paths.
+	if info, statErr := os.Stat(arg); statErr == nil && info.IsDir() && exists(filepath.Join(arg, "go.mod")) {
+		if err := lintWidth([]string{arg}); err != nil {
+			return err
+		}
+	}
+
 	path, _, cleanup, err := resolveArtifact(arg)
 	if err != nil {
 		return err
