@@ -792,6 +792,21 @@ func (h *wasmHandler) invoke(r sdk.Room, name string, roster []sdk.Player, extra
 	defer cancel()
 	hostStart := h.cbHostNanos // per-callback host-time delta baseline
 	h.hostIOExpired = false
+	// CPU-steal detection (detection only — see steal.go). Only sample when a
+	// StealMetrics sink is actually wired: the seam is dormant in prod until the
+	// platform implements it, so until then a host pays ZERO /proc/stat reads.
+	// When enabled, sample at callback BOUNDARIES (off the hot per-instruction
+	// path): once before the guest runs, and — only if the callback is killed —
+	// once at the kill site below. If the host-stolen-CPU counter advanced across
+	// that window, the VM was being stolen from while this callback ran. stealOK
+	// additionally guards a host without the signal (non-Linux, or any /proc/stat
+	// read/parse failure) — then no steal metric is recorded.
+	stealSink, stealEnabled := h.game.opts.Metrics.(StealMetrics)
+	var stealPre uint64
+	var stealOK bool
+	if stealEnabled {
+		stealPre, stealOK = stealReader()
+	}
 	cbStart := time.Now()
 	exit, _, err := h.inst.CallWithContext(ctx, name, payload)
 	dur := time.Since(cbStart)
@@ -815,6 +830,18 @@ func (h *wasmHandler) invoke(r sdk.Room, name string, roster []sdk.Player, extra
 			m.GameHostIODeadline(h.game.meta.Slug, name)
 		} else if deadlined {
 			m.GameCallbackDeadline(h.game.meta.Slug, name)
+			// Detection only: alongside (never instead of) the deadline record,
+			// take the SECOND steal sample now — only on a kill, so the happy
+			// path pays nothing. If host-stolen CPU advanced across this killed
+			// callback's window, surface it via the non-breaking optional
+			// StealMetrics seam. The kill still stands and still feeds the fault
+			// path below — this is a correlation signal for the future exonerate
+			// case, not a decision.
+			if stealEnabled && stealOK {
+				if stealPost, ok := stealReader(); ok && stealPost > stealPre {
+					stealSink.GameCallbackStealDeadline(h.game.meta.Slug, name)
+				}
+			}
 		}
 	}
 	if err != nil || exit != 0 {
