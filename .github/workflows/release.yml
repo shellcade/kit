@@ -14,7 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        # The tag push in scripts/tag-release.sh must use a PAT, not the
+        # default GITHUB_TOKEN: GitHub does NOT fire workflow triggers for tags
+        # pushed with GITHUB_TOKEN, so the downstream GoReleaser/Homebrew/notify
+        # pipeline would silently never run. Persisting the PAT here makes the
+        # `git push origin "${TAG}"` use it.
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.KIT_RELEASE_TOKEN }}
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm ci
