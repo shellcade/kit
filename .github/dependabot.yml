@@ -6,6 +6,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Only propose a release once it has been public for 10 days, so a freshly
+    # published (and possibly compromised or soon-yanked) version is never
+    # auto-PR'd until the ecosystem has had time to react.
+    cooldown:
+      default-days: 10
 
   # GitHub Actions are SHA-pinned in .github/workflows/*; Dependabot bumps the
   # pin (and the trailing `# vX.Y.Z` comment) when a new release lands.
@@ -14,3 +19,5 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 10
