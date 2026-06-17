@@ -54,7 +54,7 @@ jobs:
         with: { path: kit }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with: { go-version-file: kit/go.mod }
-      - uses: acifani/setup-tinygo@db56321a62b9a67922bb9ac8f9d085e218807bb3 # v2.0.1
+      - uses: acifani/setup-tinygo@dd8a7075d951a7595b2ef2123ed0ab1af0c13e56 # v3.0.0
         with: { tinygo-version: "0.41.1" }
       # binaryen is intentionally left at the runner's apt candidate: pinning a
       # literal apt version (binaryen=<ver>) hard-fails the install whenever the
@@ -155,7 +155,7 @@ jobs:
         with: { path: kit }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with: { go-version-file: kit/go.mod }
-      - uses: acifani/setup-tinygo@db56321a62b9a67922bb9ac8f9d085e218807bb3 # v2.0.1
+      - uses: acifani/setup-tinygo@dd8a7075d951a7595b2ef2123ed0ab1af0c13e56 # v3.0.0
         with: { tinygo-version: "0.41.1" }
       # binaryen is intentionally left at the runner's apt candidate: pinning a
       # literal apt version (binaryen=<ver>) hard-fails the install whenever the
