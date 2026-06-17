@@ -1,0 +1,14 @@
+// Failing fixture for the wide-glyph width-contract lint: each wide writer below
+// is handed a base code point that is NOT East-Asian-Width Wide/Fullwidth, so it
+// reserves two columns for a glyph the terminal advances by one — the desync
+// that corrupted the pokies reels in production.
+package widthlint
+
+import "github.com/shellcade/kit/v2"
+
+func draw(f *kit.Frame) {
+	f.SetWide(0, 0, '7', kit.Style{})           // U+0037 ASCII seven — EAW Na
+	f.SetWide(1, 0, 'A', kit.Style{})           // U+0041 — EAW Na
+	f.SetGraphemeWide(2, 0, "7️⃣", kit.Style{}) // keycap: base U+0037 — EAW Na (the pokies bug)
+	f.SetGraphemeWide(3, 0, "x", kit.Style{})   // U+0078 — EAW Na
+}

@@ -75,6 +75,8 @@ Rules of the road:
 ## Test and play
 
     shellcade-kit check game.wasm     # ABI handshake, meta, scripted room
+    shellcade-kit check .             # + lint Go source for wide-glyph width-contract bugs, then build & check
+    shellcade-kit lint-width .        # that source lint on its own (file/dir paths; no build)
     shellcade-kit play  game.wasm     # play it in this terminal (Esc to leave)
     # flags: --seed N --heartbeat 50ms --config key=value --seats N
 
