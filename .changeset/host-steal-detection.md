@@ -1,5 +1,5 @@
 ---
-"kit": patch
+"kit": minor
 ---
 
 host: detect CPU steal at callback-deadline kills (detection only)
