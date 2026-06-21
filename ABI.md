@@ -426,8 +426,8 @@ Canonical forms:
   full-change one-run delta is itself exactly 46093 bytes (= the keyframe size),
   and the inclusive `≥` makes two conformant encoders agree on shipping the
   canonical keyframe at that exact boundary. The wire cost is bounded at exactly
-  46093 bytes, never worse (+1.50× over v1's 30720-byte floor — the one honest
-  regression, paid only on full repaints / bootstrap / resume).
+  46093 bytes, never worse (+1.50× over v1's 30720-byte floor, the only size
+  regression in v2, paid only on full repaints / bootstrap / resume).
 
 **Validation (host-side, drop-not-fatal).** A validator SHALL check length
 consistency with `runCount`, every run in-bounds, runs ascending and
