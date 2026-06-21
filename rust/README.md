@@ -109,7 +109,7 @@ table is the dictionary:
 | `acct.Store().Get/Set/Delete` | `r.kv_get/kv_set/kv_delete(&p, …)` (`Option` instead of `(v, ok)`) |
 | `f.SetGrapheme(...)` | `f.set_grapheme(...)` (≤3 code points per cell, refused otherwise) |
 
-## Toolchain notes (the honest list)
+## Toolchain notes
 
 - **Target**: `wasm32-wasip1`. The crate type that works is `cdylib` — it
   produces a WASI *reactor* (exports `memory` + `_initialize`; no `_start`),
