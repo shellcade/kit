@@ -3,7 +3,7 @@
 // the ABI's code form).
 //
 // A game implements Game + Handler and calls Main(game) from main(), plus the
-// eight //go:export trampolines for the wasm build — run `gamekit new` for a
+// eight //go:export trampolines for the wasm build — run `shellcade-kit new` for a
 // working scaffold, and see GUIDE.md for the full authoring guide.
 //
 // This package is a curated facade over internal/game; the implementation is
