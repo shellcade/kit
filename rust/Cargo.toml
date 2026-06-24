@@ -15,7 +15,7 @@
 
 [package]
 name = "shellcade-kit"
-version = "2.14.0"
+version = "2.14.1"
 edition = "2021"
 # #[unsafe(no_mangle)] (emitted by shellcade_game! so expansions survive
 # edition-2024 game crates) stabilized in 1.82.

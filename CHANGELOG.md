@@ -1,5 +1,11 @@
 # kit
 
+## 2.14.1
+
+### Patch Changes
+
+- c470738: Guard non-positive `Room.Every` durations so they return no timer instead of panicking, and fix stale package metadata.
+
 ## 2.14.0
 
 ### Minor Changes
