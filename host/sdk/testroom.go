@@ -180,6 +180,9 @@ func (t *TestRoom) After(d time.Duration, fn func(r Room)) TimerID {
 	return t.nextID
 }
 func (t *TestRoom) Every(d time.Duration, fn func(r Room)) TimerID {
+	if d <= 0 {
+		return 0
+	}
 	t.nextID++
 	t.timers[t.nextID] = testTimer{fireAt: t.Clock.Add(d), period: d, fn: fn, every: true}
 	return t.nextID

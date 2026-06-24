@@ -350,7 +350,7 @@ func (rt *roomRuntime) handleHibernate(c command) {
 		c.reply <- err // freeze failed: room stays live, ordering immaterial
 		return
 	}
-	c.reply <- nil          // success reply BEFORE disposal cancels the ctx
+	c.reply <- nil         // success reply BEFORE disposal cancels the ctx
 	rt.disposeHibernated() // cancels rt.ctx; reply already delivered
 }
 
@@ -819,7 +819,7 @@ func (rt *roomRuntime) scheduleTimer(id TimerID, d time.Duration) {
 }
 
 func (h *roomHandle) Every(d time.Duration, fn func(r Room)) TimerID {
-	if !h.valid() {
+	if !h.valid() || d <= 0 {
 		return 0
 	}
 	rt := h.rt

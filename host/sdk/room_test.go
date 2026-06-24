@@ -174,6 +174,75 @@ func TestCapacityEnforced(t *testing.T) {
 	<-ctl.Done()
 }
 
+type timerEdgeHandler struct {
+	Base
+	everyZeroID TimerID
+	everyNegID  TimerID
+	afterZeroID TimerID
+	calls       chan string
+}
+
+func (h *timerEdgeHandler) OnStart(r Room) {
+	h.everyZeroID = r.Every(0, func(Room) { h.calls <- "every-zero" })
+	h.everyNegID = r.Every(-time.Second, func(Room) { h.calls <- "every-neg" })
+	h.afterZeroID = r.After(0, func(Room) { h.calls <- "after-zero" })
+}
+
+func TestEveryNonPositiveIsNoop(t *testing.T) {
+	h := &timerEdgeHandler{calls: make(chan string, 4)}
+	ctl := NewRoomRuntime("timer-edge", h, RoomConfig{Mode: ModeSolo, Capacity: 1}, Services{})
+	defer ctl.Close()
+
+	select {
+	case got := <-h.calls:
+		if got != "after-zero" {
+			t.Fatalf("first timer callback=%q, want after-zero", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("After(0) did not fire")
+	}
+	if h.everyZeroID != 0 {
+		t.Fatalf("Every(0) id=%d, want 0", h.everyZeroID)
+	}
+	if h.everyNegID != 0 {
+		t.Fatalf("Every(-d) id=%d, want 0", h.everyNegID)
+	}
+	if h.afterZeroID == 0 {
+		t.Fatal("After(0) returned 0")
+	}
+	select {
+	case got := <-h.calls:
+		t.Fatalf("unexpected non-positive Every callback %q", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestTestRoomEveryNonPositiveIsNoop(t *testing.T) {
+	h := &timerEdgeHandler{calls: make(chan string, 4)}
+	r := NewTestRoomFor(h, RoomConfig{Mode: ModeSolo, Capacity: 1}, Services{})
+	r.Start()
+	if h.everyZeroID != 0 {
+		t.Fatalf("Every(0) id=%d, want 0", h.everyZeroID)
+	}
+	if h.everyNegID != 0 {
+		t.Fatalf("Every(-d) id=%d, want 0", h.everyNegID)
+	}
+	r.Advance(0)
+	select {
+	case got := <-h.calls:
+		if got != "after-zero" {
+			t.Fatalf("first timer callback=%q, want after-zero", got)
+		}
+	default:
+		t.Fatal("After(0) did not fire in TestRoom")
+	}
+	select {
+	case got := <-h.calls:
+		t.Fatalf("unexpected non-positive Every callback %q", got)
+	default:
+	}
+}
+
 func recvFrame(t *testing.T, ch <-chan Frame) Frame {
 	t.Helper()
 	select {
