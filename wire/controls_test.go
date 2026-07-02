@@ -44,10 +44,11 @@ func TestMetaPreControlsBytesDecode(t *testing.T) {
 	m2 := m
 	m2.Controls = nil
 	pre := EncodeMeta(m2)
-	if !strings.HasPrefix(string(enc), string(pre[:len(pre)-2])) {
+	// Drop the game-kind section (u8+u32) plus the empty controls u16 count.
+	if !strings.HasPrefix(string(enc), string(pre[:len(pre)-7])) {
 		t.Fatal("controls section is not a trailing addition")
 	}
-	got, err := DecodeMeta(pre[:len(pre)-2]) // drop even the empty u16 count
+	got, err := DecodeMeta(pre[:len(pre)-7]) // drop even the empty u16 count
 	if err != nil {
 		t.Fatalf("decode pre-controls payload: %v", err)
 	}

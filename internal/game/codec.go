@@ -224,6 +224,14 @@ func encodeMeta(m GameMeta) []byte {
 	if err := wire.ValidateControls(wm.Controls); err != nil {
 		panic("kit: invalid GameMeta.Controls: " + err.Error())
 	}
+	// Game-kind trailer, validated under the same fail-fast posture: a
+	// casino game must declare its payout ceiling; a game-kind game must
+	// not.
+	wm.GameKind = uint8(m.Kind)
+	wm.MaxPayoutMultiplier = m.MaxPayoutMultiplier
+	if err := wire.ValidateGameKind(wm.GameKind, wm.MaxPayoutMultiplier); err != nil {
+		panic("kit: invalid GameMeta: " + err.Error())
+	}
 	// Stamp the wire revision this kit was built against — not
 	// author-settable; the host uses it to warn on or refuse artifacts
 	// declaring a revision above its own (deploy-order enforcement and

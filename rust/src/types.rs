@@ -260,6 +260,30 @@ pub struct Meta {
     /// at `meta()` encode time — an invalid declaration is an authoring bug
     /// and panics there.
     pub controls: &'static [ControlDecl],
+
+    /// Classifies the game for the platform economy. [`GameKind::Game`]
+    /// (default) earns platform credits from posted results;
+    /// [`GameKind::Casino`] wagers them through the room's credits calls and
+    /// never earns. Casino games MUST also declare
+    /// [`Meta::max_payout_multiplier`] and SHOULD declare
+    /// [`CTX_FEAT_CREDITS`]. An invalid combination panics at `meta()`
+    /// encode time.
+    pub kind: GameKind,
+
+    /// A casino game's declared per-stake payout ceiling: the host clamps
+    /// every settlement to the seat's open stake times this multiplier (the
+    /// platform applies its own ceiling on top). It MUST cover the game's
+    /// largest configurable outcome. Required `>= 1` for
+    /// [`GameKind::Casino`]; must be 0 for [`GameKind::Game`].
+    pub max_payout_multiplier: u32,
+}
+
+/// Game classification for the platform economy (wire values 0/1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GameKind {
+    #[default]
+    Game = 0,
+    Casino = 1,
 }
 
 /// One declared extra control ([`Meta::controls`]): the exact input it sends
@@ -292,8 +316,25 @@ pub const CTX_FEAT_ROSTER_EPOCH: u32 = 1 << 0;
 /// [`Meta::ctx_features`].
 pub const CTX_FEAT_CHARACTER: u32 = 1 << 1;
 
+/// A credits call refusal (casino-kind games; ABI.md §3). `Disabled` means
+/// the host has the economy switched off — render an out-of-service state,
+/// never trap. `Insufficient` means the wager exceeded the balance or a
+/// platform bet limit; the bet did not happen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreditsError {
+    Insufficient,
+    Disabled,
+    Denied,
+    Unavailable,
+}
+
+/// Declares that the game calls the credits host functions (casino-kind
+/// games). Declaration-only — it changes no callback encoding. Declare it in
+/// [`Meta::ctx_features`] on casino games.
+pub const CTX_FEAT_CREDITS: u32 = 1 << 2;
+
 /// The feature bits this SDK revision defines.
-pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH | CTX_FEAT_CHARACTER;
+pub(crate) const KNOWN_CTX_FEATURES: u32 = CTX_FEAT_ROSTER_EPOCH | CTX_FEAT_CHARACTER | CTX_FEAT_CREDITS;
 
 /// Heartbeat declaration envelope (mirrors the host clamp range).
 pub(crate) const HEARTBEAT_MIN_MS: u16 = 20;
@@ -318,6 +359,8 @@ impl Meta {
         heartbeat_ms: 0,
         controls: &[],
         lifecycle: Lifecycle::Resumable,
+        kind: GameKind::Game,
+        max_payout_multiplier: 0,
     };
 }
 

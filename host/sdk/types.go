@@ -214,12 +214,45 @@ type GameMeta struct {
 	// input interpretation. Nil/empty = none declared.
 	Controls []ControlDecl `json:"controls,omitempty"`
 
+	// Kind classifies the game for the platform economy (decoded from the
+	// meta payload's trailing game-kind section): GameKindGame (the zero
+	// value and the reading for every pre-revision-7 artifact) earns
+	// credits from results; GameKindCasino wagers them through the credits
+	// host functions and never earns. The host gates the credits functions
+	// on this declaration.
+	Kind GameKind `json:"kind,omitempty"`
+
+	// MaxPayoutMultiplier is a casino game's declared per-stake payout
+	// ceiling: the host clamps every settlement to the seat's open stake
+	// times this multiplier, after applying the platform's own ceiling.
+	// 0 for game-kind games.
+	MaxPayoutMultiplier uint32 `json:"maxPayoutMultiplier,omitempty"`
+
 	// Hidden is a HOST-SET flag (json:"-", never decoded from a guest's declared
 	// meta) marking a game live-but-unlisted: it is registered and reachable by
 	// exact slug (quick-match, direct entry, admin), but the lobby's player-facing
 	// games menu omits it. The built-in load-test game uses this so real players
 	// never land in bot rooms (add-loadtest-harness).
 	Hidden bool `json:"-"`
+}
+
+// GameKind classifies a game for the platform economy.
+type GameKind uint8
+
+const (
+	// GameKindGame is a skill/score game: its results earn platform credits.
+	GameKindGame GameKind = 0
+	// GameKindCasino is a gambling game: players wager account-wide credits
+	// through the credits host functions; it never earns.
+	GameKindCasino GameKind = 1
+)
+
+// String renders the kind for JSON-adjacent surfaces and logs.
+func (k GameKind) String() string {
+	if k == GameKindCasino {
+		return "casino"
+	}
+	return "game"
 }
 
 // ControlDecl is one game-declared extra control: the exact input it sends

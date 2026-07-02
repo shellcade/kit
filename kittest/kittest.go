@@ -62,6 +62,22 @@ type Room struct {
 	// or write with kit.MergeMax/kit.MergeSum so a blip-era write cannot
 	// clobber the durable value at merge time).
 	KVUnavailable bool
+
+	// Credits is the in-memory credits double for casino-kind games:
+	// accountID -> balance. Absent accounts are seeded CreditsSeed on first
+	// touch. CreditsStakes tracks each account's open (wagered, unsettled)
+	// stake; Settle credits the GROSS payout and clears it, mirroring the
+	// production escrow semantics.
+	Credits       map[string]int64
+	CreditsStakes map[string]int64
+
+	// CreditsSeed is the first-touch balance (default 1000, set by NewRoom).
+	CreditsSeed int64
+
+	// CreditsDisabled simulates a host with the economy switched off: every
+	// credits call returns kit.ErrEconomyDisabled, the state a casino game
+	// must render as out-of-service rather than trap.
+	CreditsDisabled bool
 }
 
 // NewRoom returns a Room with the given members, a seeded RNG (seed 1), and a
@@ -129,7 +145,7 @@ func (r *Room) Post(res kit.Result)                { r.Posted = append(r.Posted,
 func (r *Room) Log(msg string)                     { r.Logs = append(r.Logs, msg) }
 
 func (r *Room) Services() kit.Services {
-	return kit.Services{Accounts: accounts{r}, Config: config{r}}
+	return kit.Services{Accounts: accounts{r}, Config: config{r}, Credits: credits{r}}
 }
 
 // ---- services doubles -----------------------------------------------------------
@@ -179,6 +195,63 @@ func (k kv) Delete(_ context.Context, key string) error {
 		return nil // host degradation: the delete is silently dropped
 	}
 	delete(k.r.KV[k.id], key)
+	return nil
+}
+
+type credits struct{ r *Room }
+
+func (c credits) balance(id string) int64 {
+	if c.r.Credits == nil {
+		c.r.Credits = map[string]int64{}
+	}
+	if _, ok := c.r.Credits[id]; !ok {
+		seed := c.r.CreditsSeed
+		if seed == 0 {
+			seed = 1000
+		}
+		c.r.Credits[id] = seed
+	}
+	return c.r.Credits[id]
+}
+
+func (c credits) Balance(p kit.Player) (int64, error) {
+	if c.r.CreditsDisabled {
+		return 0, kit.ErrEconomyDisabled
+	}
+	return c.balance(p.AccountID), nil
+}
+
+func (c credits) Wager(p kit.Player, amount int64) error {
+	if c.r.CreditsDisabled {
+		return kit.ErrEconomyDisabled
+	}
+	if amount <= 0 {
+		return kit.ErrCreditsDenied
+	}
+	bal := c.balance(p.AccountID)
+	if amount > bal {
+		return kit.ErrInsufficientCredits
+	}
+	if c.r.CreditsStakes == nil {
+		c.r.CreditsStakes = map[string]int64{}
+	}
+	c.r.Credits[p.AccountID] = bal - amount
+	c.r.CreditsStakes[p.AccountID] += amount
+	return nil
+}
+
+func (c credits) Settle(p kit.Player, payout int64) error {
+	if c.r.CreditsDisabled {
+		return kit.ErrEconomyDisabled
+	}
+	if c.r.CreditsStakes[p.AccountID] == 0 {
+		return kit.ErrCreditsDenied
+	}
+	if payout < 0 {
+		payout = 0
+	}
+	delete(c.r.CreditsStakes, p.AccountID)
+	c.r.Credits[p.AccountID] = c.balance(p.AccountID) + payout
 	return nil
 }
 
