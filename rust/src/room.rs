@@ -9,7 +9,7 @@ use crate::frame::Frame;
 use crate::host;
 use crate::input::InputContext;
 use crate::rng::SplitMix64;
-use crate::types::{MergeRule, Outcome, Player, RoomConfig};
+use crate::types::{CreditsError, MergeRule, Outcome, Player, RoomConfig};
 use crate::wire::{encode_outcome, CallCtx};
 
 thread_local! {
@@ -149,6 +149,43 @@ impl Room {
         host::host_config_get(key)
     }
 
+    // ---- platform credits (casino-kind games) -------------------------------------
+
+    /// The player's account-wide credits balance (casino-kind games with
+    /// `Meta::kind = GameKind::Casino`; game-kind guests get
+    /// [`CreditsError::Denied`]).
+    pub fn credits_balance(&self, p: &Player) -> Result<i64, CreditsError> {
+        let idx = self.kv_index(p).ok_or(CreditsError::Denied)?;
+        let v = host::host_credits_balance(idx);
+        if v < 0 {
+            return Err(credits_err(v));
+        }
+        Ok(v)
+    }
+
+    /// Escrow `amount` from the player's balance into this seat's open stake.
+    /// Repeated wagers before settlement accumulate one stake (double-down,
+    /// side bets). On [`CreditsError::Insufficient`] the bet did not happen —
+    /// render it.
+    pub fn credits_wager(&mut self, p: &Player, amount: i64) -> Result<(), CreditsError> {
+        let idx = self.kv_index(p).ok_or(CreditsError::Denied)?;
+        match host::host_credits_wager(idx, amount) {
+            v if v < 0 => Err(credits_err(v)),
+            _ => Ok(()),
+        }
+    }
+
+    /// Close the seat's open stake with the GROSS (stake-inclusive) payout:
+    /// 0 = loss, the stake = push, stake + winnings = win. The host clamps to
+    /// stake x the game's declared `max_payout_multiplier`.
+    pub fn credits_settle(&mut self, p: &Player, payout: i64) -> Result<(), CreditsError> {
+        let idx = self.kv_index(p).ok_or(CreditsError::Denied)?;
+        match host::host_credits_settle(idx, payout) {
+            v if v < 0 => Err(credits_err(v)),
+            _ => Ok(()),
+        }
+    }
+
     // ---- internals ---------------------------------------------------------------
 
     fn index(&self, p: &Player) -> Option<usize> {
@@ -161,6 +198,16 @@ impl Room {
     fn kv_index(&self, p: &Player) -> Option<usize> {
         self.index(p)
             .or_else(|| self.ctx.members.iter().position(|m| m.account_id == p.account_id))
+    }
+}
+
+/// Map a negative ABI status code to the typed error.
+fn credits_err(code: i64) -> CreditsError {
+    match code {
+        crate::wire::CREDITS_ERR_INSUFFICIENT => CreditsError::Insufficient,
+        crate::wire::CREDITS_ERR_DISABLED => CreditsError::Disabled,
+        crate::wire::CREDITS_ERR_DENIED => CreditsError::Denied,
+        _ => CreditsError::Unavailable,
     }
 }
 

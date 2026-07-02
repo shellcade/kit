@@ -88,9 +88,10 @@ pub use frame::{
 pub use input::{Action, Input, InputContext, Key};
 pub use room::Room;
 pub use types::{
-    Aggregation, Character, ConfigKeySpec, ConfigType, ControlDecl, Direction, Kind, Leaderboard,
-    MergeRule, Meta, MetricFormat, Mode, Outcome, Player, PlayerResult, RoomConfig, Status,
-    CTX_FEAT_CHARACTER, CTX_FEAT_ROSTER_EPOCH, Lifecycle,
+    Aggregation, Character, ConfigKeySpec, ConfigType, ControlDecl, CreditsError, Direction,
+    GameKind, Kind, Leaderboard, MergeRule, Meta, MetricFormat, Mode, Outcome, Player,
+    PlayerResult, RoomConfig, Status, CTX_FEAT_CHARACTER, CTX_FEAT_CREDITS,
+    CTX_FEAT_ROSTER_EPOCH, Lifecycle,
 };
 
 // Native-only scriptable host double for `cargo test` of games and the SDK
@@ -127,11 +128,11 @@ pub trait Handler {
 /// Everything a game file needs: `use shellcade_kit::prelude::*;`
 pub mod prelude {
     pub use crate::{
-        character_cell, Action, Aggregation, Cell, Character, Color, ControlDecl, Direction,
-        Frame, Game, Handler, Input, InputContext, Key, Kind, Leaderboard, MergeRule, Meta,
-        MetricFormat, Mode, Outcome, Player, PlayerResult, Room, RoomConfig, Status, Style,
-        ATTR_BOLD, ATTR_DIM, ATTR_REVERSE, ATTR_UNDERLINE, COLS, CYAN, DIM_GRAY, GREEN, RED,
-        ROWS, WHITE, YELLOW,
+        character_cell, Action, Aggregation, Cell, Character, Color, ControlDecl, CreditsError,
+        Direction, Frame, Game, GameKind, Handler, Input, InputContext, Key, Kind, Leaderboard,
+        MergeRule, Meta, MetricFormat, Mode, Outcome, Player, PlayerResult, Room, RoomConfig,
+        Status, Style, ATTR_BOLD, ATTR_DIM, ATTR_REVERSE, ATTR_UNDERLINE, COLS, CYAN, DIM_GRAY,
+        GREEN, RED, ROWS, WHITE, YELLOW,
     };
 }
 

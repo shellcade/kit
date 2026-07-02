@@ -86,6 +86,8 @@ func scalarMetaFull() Meta {
 			{Kind: InputRune, Rune: 'r', Label: "RESIGN"},
 			{Kind: InputKey, Key: KeyCodeBackspace, Label: "UNDO"},
 		},
+		GameKind:            GameKindCasino,
+		MaxPayoutMultiplier: 10000,
 	}
 }
 
@@ -111,6 +113,9 @@ func scalarMetaTrunc() Meta {
 		Lifecycle:      LifecycleEphemeral,
 		WireRevision:   Revision,
 		Controls:       []ControlDecl{{Kind: InputKey, Key: KeyCodeBackspace, Label: "UNDO"}},
+
+		GameKind:            GameKindCasino,
+		MaxPayoutMultiplier: 500,
 	}
 }
 
@@ -153,13 +158,14 @@ type scalarVector struct {
 // Trailing meta section widths measured from the END of an encoding with zero
 // config specs and ONE declared key control (u16 count + u8 kind + u8 key +
 // str "UNDO" = 10): config 2 | large-room 6 | lifecycle 1 | wireRevision 2 |
-// controls 10.
+// controls 10 | game-kind 5 (u8 + u32).
 const (
-	truncPreControls  = 10
-	truncPreRevision  = 10 + 2
-	truncPreLifecycle = 10 + 2 + 1
-	truncPreLargeRoom = 10 + 2 + 1 + 6
-	truncPreConfig    = 10 + 2 + 1 + 6 + 2
+	truncPreKind      = 5
+	truncPreControls  = 5 + 10
+	truncPreRevision  = 5 + 10 + 2
+	truncPreLifecycle = 5 + 10 + 2 + 1
+	truncPreLargeRoom = 5 + 10 + 2 + 1 + 6
+	truncPreConfig    = 5 + 10 + 2 + 1 + 6 + 2
 )
 
 func scalarVectors() []scalarVector {
@@ -177,6 +183,7 @@ func scalarVectors() []scalarVector {
 		{"meta_full", EncodeMeta(scalarMetaFull())},
 		{"meta_trunc_pre_config", trunc[:len(trunc)-truncPreConfig]},
 		{"meta_trunc_pre_controls", trunc[:len(trunc)-truncPreControls]},
+		{"meta_trunc_pre_kind", trunc[:len(trunc)-truncPreKind]},
 		{"meta_trunc_pre_largeroom", trunc[:len(trunc)-truncPreLargeRoom]},
 		{"meta_trunc_pre_lifecycle", trunc[:len(trunc)-truncPreLifecycle]},
 		{"meta_trunc_pre_revision", trunc[:len(trunc)-truncPreRevision]},
@@ -274,21 +281,29 @@ func TestScalarGoldenMetaDecode(t *testing.T) {
 			m.ConfigSpecs = nil
 			m.CtxFeatures, m.HeartbeatMS, m.Lifecycle, m.WireRevision = 0, 0, 0, 0
 			m.Controls = nil
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
 		}},
 		{"meta_trunc_pre_largeroom", truncPreLargeRoom, func(m *Meta) {
 			m.CtxFeatures, m.HeartbeatMS, m.Lifecycle, m.WireRevision = 0, 0, 0, 0
 			m.Controls = nil
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
 		}},
 		{"meta_trunc_pre_lifecycle", truncPreLifecycle, func(m *Meta) {
 			m.Lifecycle, m.WireRevision = 0, 0
 			m.Controls = nil
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
 		}},
 		{"meta_trunc_pre_revision", truncPreRevision, func(m *Meta) {
 			m.WireRevision = 0
 			m.Controls = nil
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
 		}},
 		{"meta_trunc_pre_controls", truncPreControls, func(m *Meta) {
 			m.Controls = nil
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
+		}},
+		{"meta_trunc_pre_kind", truncPreKind, func(m *Meta) {
+			m.GameKind, m.MaxPayoutMultiplier = 0, 0
 		}},
 	}
 	for _, tc := range cases {

@@ -33,7 +33,7 @@ func TestDecodeMetaControls(t *testing.T) {
 
 	// Pre-controls payload (no trailing section): nil Controls, no error.
 	pre := wire.EncodeMeta(wire.Meta{Slug: "old", Name: "Old", MinPlayers: 1, MaxPlayers: 2})
-	pre = pre[:len(pre)-2] // strip the zero-count controls section
+	pre = pre[:len(pre)-7] // strip the game-kind section + zero-count controls section
 	m, err = decodeMeta(pre)
 	if err != nil {
 		t.Fatal(err)

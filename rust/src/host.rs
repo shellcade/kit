@@ -41,6 +41,13 @@ mod imp {
         fn kv_delete(player_idx: u64, key_off: u64);
         /// config_get(ptr key) → ptr (0 = not found).
         fn config_get(key_off: u64) -> u64;
+        /// credits_balance(i64 playerIdx) → i64 balance (>= 0) or a negative
+        /// CREDITS_ERR_* status (ABI.md §3; casino-kind games only).
+        fn credits_balance(player_idx: u64) -> i64;
+        /// credits_wager(i64 playerIdx, i64 amount) → i64 status.
+        fn credits_wager(player_idx: u64, amount: i64) -> i64;
+        /// credits_settle(i64 playerIdx, i64 payout) → i64 status.
+        fn credits_settle(player_idx: u64, payout: i64) -> i64;
     }
 
     /// Stage pre-serialized bytes in extism kernel memory. Infallible by
@@ -150,6 +157,21 @@ mod imp {
         km.free();
         read_free(off)
     }
+
+    pub fn host_credits_balance(player_idx: usize) -> i64 {
+        // SAFETY: scalar-only raw import per ABI.md §3.
+        unsafe { credits_balance(player_idx as u64) }
+    }
+
+    pub fn host_credits_wager(player_idx: usize, amount: i64) -> i64 {
+        // SAFETY: as host_credits_balance.
+        unsafe { credits_wager(player_idx as u64, amount) }
+    }
+
+    pub fn host_credits_settle(player_idx: usize, payout: i64) -> i64 {
+        // SAFETY: as host_credits_balance.
+        unsafe { credits_settle(player_idx as u64, payout) }
+    }
 }
 
 // ---- native test host (cargo test) ---------------------------------------------
@@ -186,6 +208,15 @@ mod imp {
         pub logs: Vec<(i64, String)>,
         pub kv: HashMap<(usize, String), Vec<u8>>,
         pub config: HashMap<String, Vec<u8>>,
+        /// Credits balances per roster index (seeded on first touch with
+        /// `credits_seed`, default 1000) and each index's open stake —
+        /// mirrors the production escrow semantics so casino games unit-test
+        /// natively. `credits_disabled` makes every call report
+        /// CREDITS_ERR_DISABLED (the economy-off state a game must render).
+        pub credits: HashMap<usize, i64>,
+        pub credits_stakes: HashMap<usize, i64>,
+        pub credits_seed: i64,
+        pub credits_disabled: bool,
     }
 
     thread_local! {
@@ -258,6 +289,53 @@ mod imp {
     }
     pub fn host_config_get(key: &str) -> Option<Vec<u8>> {
         with_test_host(|h| h.config.get(key).cloned())
+    }
+
+    fn credits_balance_of(h: &mut TestHost, idx: usize) -> i64 {
+        let seed = if h.credits_seed == 0 { 1000 } else { h.credits_seed };
+        *h.credits.entry(idx).or_insert(seed)
+    }
+
+    pub fn host_credits_balance(player_idx: usize) -> i64 {
+        with_test_host(|h| {
+            if h.credits_disabled {
+                return crate::wire::CREDITS_ERR_DISABLED;
+            }
+            credits_balance_of(h, player_idx)
+        })
+    }
+
+    pub fn host_credits_wager(player_idx: usize, amount: i64) -> i64 {
+        with_test_host(|h| {
+            if h.credits_disabled {
+                return crate::wire::CREDITS_ERR_DISABLED;
+            }
+            if amount <= 0 {
+                return crate::wire::CREDITS_ERR_DENIED;
+            }
+            let bal = credits_balance_of(h, player_idx);
+            if amount > bal {
+                return crate::wire::CREDITS_ERR_INSUFFICIENT;
+            }
+            h.credits.insert(player_idx, bal - amount);
+            *h.credits_stakes.entry(player_idx).or_insert(0) += amount;
+            crate::wire::CREDITS_OK
+        })
+    }
+
+    pub fn host_credits_settle(player_idx: usize, payout: i64) -> i64 {
+        with_test_host(|h| {
+            if h.credits_disabled {
+                return crate::wire::CREDITS_ERR_DISABLED;
+            }
+            if h.credits_stakes.get(&player_idx).copied().unwrap_or(0) == 0 {
+                return crate::wire::CREDITS_ERR_DENIED;
+            }
+            h.credits_stakes.remove(&player_idx);
+            let bal = credits_balance_of(h, player_idx);
+            h.credits.insert(player_idx, bal + payout.max(0));
+            crate::wire::CREDITS_OK
+        })
     }
 }
 

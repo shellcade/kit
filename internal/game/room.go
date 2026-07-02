@@ -139,7 +139,54 @@ func (r *room) Log(msg string) {
 }
 
 func (r *room) Services() Services {
-	return Services{Accounts: accountStore{r}, Config: configStore{}}
+	return Services{Accounts: accountStore{r}, Config: configStore{}, Credits: creditsSvc{r}}
+}
+
+// creditsSvc bridges the Credits surface to the credits host functions. The
+// guest passes only the roster index; the host derives the account (the same
+// scoping discipline as KV). Departed players (the leave callback's final
+// roster entry) resolve by account id, so a leave-time settle still lands.
+type creditsSvc struct{ r *room }
+
+func (c creditsSvc) index(p Player) int {
+	idx := c.r.index(p)
+	if idx >= 0 {
+		return idx
+	}
+	for i, m := range c.r.ctx.members {
+		if m.AccountID == p.AccountID {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c creditsSvc) Balance(p Player) (int64, error) {
+	idx := c.index(p)
+	if idx < 0 {
+		return 0, ErrCreditsDenied
+	}
+	code := int64(hostCreditsBalance(uint64(idx)))
+	if code < 0 {
+		return 0, creditsErr(code)
+	}
+	return code, nil
+}
+
+func (c creditsSvc) Wager(p Player, amount int64) error {
+	idx := c.index(p)
+	if idx < 0 {
+		return ErrCreditsDenied
+	}
+	return creditsErr(int64(hostCreditsWager(uint64(idx), uint64(amount))))
+}
+
+func (c creditsSvc) Settle(p Player, payout int64) error {
+	idx := c.index(p)
+	if idx < 0 {
+		return ErrCreditsDenied
+	}
+	return creditsErr(int64(hostCreditsSettle(uint64(idx), uint64(payout))))
 }
 
 type accountStore struct{ r *room }
