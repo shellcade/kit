@@ -74,6 +74,13 @@ type Room struct {
 	// CreditsSeed is the first-touch balance (default 1000, set by NewRoom).
 	CreditsSeed int64
 
+	// CreditsMaxPayoutMultiplier mirrors the host's per-hand payout clamp:
+	// when > 0, Settle truncates the gross payout to stake x this value —
+	// set it to your Meta's MaxPayoutMultiplier so unit tests exercise the
+	// same ceiling `shellcade-kit check` and production enforce. 0 = no
+	// clamp (the pre-clamp behavior).
+	CreditsMaxPayoutMultiplier uint32
+
 	// CreditsDisabled simulates a host with the economy switched off: every
 	// credits call returns kit.ErrEconomyDisabled, the state a casino game
 	// must render as out-of-service rather than trap.
@@ -244,11 +251,17 @@ func (c credits) Settle(p kit.Player, payout int64) error {
 	if c.r.CreditsDisabled {
 		return kit.ErrEconomyDisabled
 	}
-	if c.r.CreditsStakes[p.AccountID] == 0 {
+	stake := c.r.CreditsStakes[p.AccountID]
+	if stake == 0 {
 		return kit.ErrCreditsDenied
 	}
 	if payout < 0 {
 		payout = 0
+	}
+	if m := c.r.CreditsMaxPayoutMultiplier; m > 0 {
+		if lim := stake * int64(m); payout > lim {
+			payout = lim
+		}
 	}
 	delete(c.r.CreditsStakes, p.AccountID)
 	c.r.Credits[p.AccountID] = c.balance(p.AccountID) + payout
