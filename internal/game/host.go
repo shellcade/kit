@@ -58,6 +58,13 @@ func hostCreditsWager(playerIdx uint64, amount uint64) uint64
 //go:wasmimport extism:host/user credits_settle
 func hostCreditsSettle(playerIdx uint64, payout uint64) uint64
 
+// credits_buyback (revision 8): broke-relief rebuy; returns the new balance
+// (>= 0) or a negative wire.CreditsErr* (ErrInsufficient = refused: solvent
+// or daily limit reached).
+
+//go:wasmimport extism:host/user credits_buyback
+func hostCreditsBuyback(playerIdx uint64) uint64
+
 // alloc copies b into Extism kernel memory; the caller MUST Free it after the
 // host call returns (kernel memory is not garbage collected).
 func alloc(b []byte) pdk.Memory { return pdk.AllocateBytes(b) }

@@ -48,6 +48,9 @@ mod imp {
         fn credits_wager(player_idx: u64, amount: i64) -> i64;
         /// credits_settle(i64 playerIdx, i64 payout) → i64 status.
         fn credits_settle(player_idx: u64, payout: i64) -> i64;
+        /// credits_buyback(i64 playerIdx) → i64 new balance (>= 0) or a
+        /// negative CREDITS_ERR_* (ABI.md §3; revision 8).
+        fn credits_buyback(player_idx: u64) -> i64;
     }
 
     /// Stage pre-serialized bytes in extism kernel memory. Infallible by
@@ -171,6 +174,11 @@ mod imp {
     pub fn host_credits_settle(player_idx: usize, payout: i64) -> i64 {
         // SAFETY: as host_credits_balance.
         unsafe { credits_settle(player_idx as u64, payout) }
+    }
+
+    pub fn host_credits_buyback(player_idx: usize) -> i64 {
+        // SAFETY: as host_credits_balance.
+        unsafe { credits_buyback(player_idx as u64) }
     }
 }
 
@@ -335,6 +343,24 @@ mod imp {
             let bal = credits_balance_of(h, player_idx);
             h.credits.insert(player_idx, bal + payout.max(0));
             crate::wire::CREDITS_OK
+        })
+    }
+
+    pub fn host_credits_buyback(player_idx: usize) -> i64 {
+        with_test_host(|h| {
+            if h.credits_disabled {
+                return crate::wire::CREDITS_ERR_DISABLED;
+            }
+            // Broke-only, platform floor/amount defaults (100 / 1000); the
+            // test host does not model the per-day rebuy limit.
+            let bal = credits_balance_of(h, player_idx);
+            let stake = h.credits_stakes.get(&player_idx).copied().unwrap_or(0);
+            if bal + stake >= 100 {
+                return crate::wire::CREDITS_ERR_INSUFFICIENT;
+            }
+            let new_bal = bal.max(1000);
+            h.credits.insert(player_idx, new_bal);
+            new_bal
         })
     }
 }

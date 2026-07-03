@@ -1193,6 +1193,14 @@ func hostFunctions() []extism.HostFunction {
 					return wire.CreditsOK, svc.Settle(cctx, pl, payout)
 				}))
 			}),
+		hf(wire.FnCreditsBuyback, []extism.ValueType{i64}, []extism.ValueType{i64},
+			func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+				h := currentHandler(ctx)
+				idx := int(stack[0])
+				stack[0] = uint64(h.creditsCall(ctx, idx, func(cctx context.Context, svc sdk.CreditsService, pl sdk.Player) (int64, error) {
+					return svc.Buyback(cctx, pl)
+				}))
+			}),
 	}
 }
 

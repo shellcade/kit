@@ -230,6 +230,30 @@ func (c *memCredits) Settle(_ context.Context, p sdk.Player, payout int64) error
 	return nil
 }
 
+// memBuybackFloor / memBuybackAmount mirror the platform defaults so `check`
+// and the dev runner exercise the same broke-relief shape. memsvc does NOT
+// enforce the platform's per-day rebuy limit — that count cap lives only in
+// the durable ledger; here a broke player can always rebuy.
+const (
+	memBuybackFloor  int64 = 100
+	memBuybackAmount int64 = 1000
+)
+
+func (c *memCredits) Buyback(_ context.Context, p sdk.Player) (int64, error) {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	acc := c.account(p)
+	// Broke-only: solvent players are refused (as the real floor gate does).
+	// The open stake counts toward solvency — a seat mid-hand is not broke.
+	if acc.balance+acc.stakes[c.roomID] >= memBuybackFloor {
+		return acc.balance, sdk.ErrInsufficientCredits
+	}
+	if acc.balance < memBuybackAmount {
+		acc.balance = memBuybackAmount
+	}
+	return acc.balance, nil
+}
+
 // ---- per-user KV ----
 
 type kvKey struct{ slug, account, key string }

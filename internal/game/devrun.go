@@ -416,6 +416,19 @@ func (c nativeCredits) Settle(p Player, payout int64) error {
 	return nil
 }
 
+func (c nativeCredits) Buyback(p Player) (int64, error) {
+	st := c.state(p)
+	// Broke-only, mirroring the platform floor/amount defaults; the dev
+	// runner does not model the per-day rebuy limit.
+	if st.balance+st.stake >= 100 {
+		return st.balance, ErrInsufficientCredits
+	}
+	if st.balance < 1000 {
+		st.balance = 1000
+	}
+	return st.balance, nil
+}
+
 type nativeAccounts struct{ r *nativeRoom }
 
 func (a nativeAccounts) For(p Player) Account { return nativeAccount{a.r, p} }

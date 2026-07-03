@@ -106,6 +106,14 @@ type Credits interface {
 	Wager(p Player, amount int64) error
 	// Settle closes the seat's open stake with the gross payout (0 = loss).
 	Settle(p Player, payout int64) error
+	// Buyback triggers the platform broke-relief rebuy for a player who has
+	// run out of credits mid-session, returning the new balance. The host
+	// gates it (a broke-only floor and a per-day rebuy limit); a refusal
+	// (already solvent, or the daily limit reached) surfaces as
+	// ErrInsufficientCredits with the balance unchanged — render it, do not
+	// retry. The credited amount lands in the player's account AND is made
+	// wagerable in the current seat.
+	Buyback(p Player) (int64, error)
 }
 
 // Credits errors, mirrored from the ABI status codes. ErrEconomyDisabled

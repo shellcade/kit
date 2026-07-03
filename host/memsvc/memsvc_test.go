@@ -317,3 +317,40 @@ func (g testGame) Meta() sdk.GameMeta { return sdk.GameMeta{Slug: g.slug, Name: 
 func (g testGame) NewRoom(cfg sdk.RoomConfig, svc sdk.Services) sdk.Handler {
 	return sdk.Base{} // the Reader path never builds a room; identity only
 }
+
+// The credits double supports the mid-session broke-relief rebuy: a solvent
+// player is refused, a broke player (open stake excluded) is topped up, and a
+// player mid-hand (all funds in the open stake) still counts as broke only
+// once the stake is settled to a loss.
+func TestCreditsBuyback(t *testing.T) {
+	f := quietFactory(t)
+	svc := f.For("room-buyback", "demo")
+	ctx := context.Background()
+	p := member("a", "Ada")
+
+	// Seeded at 1000: solvent, so buyback refuses and leaves the balance.
+	if bal, err := svc.Credits.Buyback(ctx, p); !errIs(err, sdk.ErrInsufficientCredits) || bal != 1000 {
+		t.Fatalf("solvent buyback = %d err=%v, want 1000 + ErrInsufficientCredits", bal, err)
+	}
+
+	// Wager the whole balance and lose it: now broke.
+	if err := svc.Credits.Wager(ctx, p, 1000); err != nil {
+		t.Fatalf("wager: %v", err)
+	}
+	// Mid-hand (stake open) is NOT broke — the stake counts toward solvency.
+	if _, err := svc.Credits.Buyback(ctx, p); !errIs(err, sdk.ErrInsufficientCredits) {
+		t.Fatalf("mid-hand buyback err = %v, want ErrInsufficientCredits (stake is not broke)", err)
+	}
+	if err := svc.Credits.Settle(ctx, p, 0); err != nil { // lose it
+		t.Fatalf("settle loss: %v", err)
+	}
+	if bal, _ := svc.Credits.Balance(ctx, p); bal != 0 {
+		t.Fatalf("balance after loss = %d, want 0", bal)
+	}
+	// Now broke: buyback tops up to the amount and returns the new balance.
+	if bal, err := svc.Credits.Buyback(ctx, p); err != nil || bal != 1000 {
+		t.Fatalf("broke buyback = %d err=%v, want 1000", bal, err)
+	}
+}
+
+func errIs(err, target error) bool { return err != nil && err == target }
