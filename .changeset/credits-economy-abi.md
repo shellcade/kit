@@ -1,5 +1,5 @@
 ---
-"github.com/shellcade/kit/v2": minor
+"kit": minor
 ---
 
 Casino games: the game-kind meta section, credits host functions, and CtxFeatCredits (wire revision 7)
