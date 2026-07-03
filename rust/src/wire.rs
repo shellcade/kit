@@ -204,7 +204,17 @@ fn decode_members(r: &mut Rd<'_>, n: usize, features: u32) -> Vec<Player> {
 /// `wire.Revision` — one protocol constant, asserted equal in lockstep by
 /// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
 /// parses this source line; keep the declaration on one line).
-pub(crate) const WIRE_REVISION: u16 = 6;
+pub(crate) const WIRE_REVISION: u16 = 7;
+
+/// Credits host-function status codes (ABI.md §3): `credits_balance` returns
+/// the balance (>= 0) or one of the negatives; wager/settle return
+/// [`CREDITS_OK`] or a negative. Mirrors Go's `wire.CreditsOK`/`CreditsErr*`.
+pub(crate) const CREDITS_OK: i64 = 0;
+pub(crate) const CREDITS_ERR_INSUFFICIENT: i64 = -1;
+pub(crate) const CREDITS_ERR_DISABLED: i64 = -2;
+pub(crate) const CREDITS_ERR_DENIED: i64 = -3;
+#[allow(dead_code)] // decoded by credits_err mapping's catch-all
+pub(crate) const CREDITS_ERR_UNAVAILABLE: i64 = -4;
 
 /// Pack a [`Meta`] for the `meta` export — the single SDK-owned serializer.
 pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
@@ -287,6 +297,24 @@ pub(crate) fn encode_meta(m: &Meta) -> Vec<u8> {
         }
         w.str(cd.label);
     }
+    // Trailing game-kind section (ABI.md §4.2, revision 7): u8 kind + u32
+    // payout ceiling. Always written; validated under the same fail-fast
+    // posture — a casino game must declare its ceiling, a game-kind game
+    // must not (mirrors Go's wire.ValidateGameKind).
+    match m.kind {
+        crate::types::GameKind::Game => {
+            if m.max_payout_multiplier != 0 {
+                panic!("shellcade-kit: invalid Meta: game-kind game declares max_payout_multiplier {}", m.max_payout_multiplier);
+            }
+        }
+        crate::types::GameKind::Casino => {
+            if m.max_payout_multiplier == 0 {
+                panic!("shellcade-kit: invalid Meta: casino game must declare max_payout_multiplier >= 1");
+            }
+        }
+    }
+    w.u8(m.kind as u8);
+    w.u32(m.max_payout_multiplier);
     w.b
 }
 
@@ -607,7 +635,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e00000000000000000000000006000000";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e000000000000000000000000070000000000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -630,7 +658,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "040063746c67040043746c47000001000200000000000000000000000000000000000000060002000072000000060052455349474e01020400554e444f";
+        let golden = "040063746c67040043746c47000001000200000000000000000000000000000000000000070002000072000000060052455349474e01020400554e444f0000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust controls encoding diverges from the Go golden");
     }
@@ -762,10 +790,10 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 6 LE
-        //         + u16 controls count 0
-        //         = "01000000" + "6400" + "00" + "0600" + "0000"
-        assert!(got.ends_with("00000100000064000006000000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-26..]);
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 7 LE
+        //         + u16 controls count 0 + u8 kind 0 + u32 multiplier 0
+        //         = "01000000" + "6400" + "00" + "0700" + "0000" + "00" + "00000000"
+        assert!(got.ends_with("000001000000640000070000000000000000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-36..]);
     }
 }
 
@@ -795,9 +823,9 @@ mod scalar_golden {
     use super::*;
     use crate::input::{Input, Key};
     use crate::types::{
-        Aggregation, ConfigKeySpec, ConfigType, ControlDecl, Direction, Kind, Leaderboard,
-        Lifecycle, Meta, MetricFormat, Mode, Outcome, Player, PlayerResult, Status,
-        CTX_FEAT_ROSTER_EPOCH,
+        Aggregation, ConfigKeySpec, ConfigType, ControlDecl, Direction, GameKind, Kind,
+        Leaderboard, Lifecycle, Meta, MetricFormat, Mode, Outcome, Player, PlayerResult,
+        Status, CTX_FEAT_ROSTER_EPOCH,
     };
 
     const VECTORS: &str = include_str!("../tests/golden/scalars.txt");
@@ -887,6 +915,8 @@ mod scalar_golden {
                 ControlDecl { input: Input::Char('r'), label: "RESIGN" },
                 ControlDecl { input: Input::Key(Key::Backspace), label: "UNDO" },
             ],
+            kind: GameKind::Casino,
+            max_payout_multiplier: 10000,
         };
         assert_eq!(
             hex(&encode_meta(&m)),

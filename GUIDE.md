@@ -470,6 +470,72 @@ non-empty, and never under the reserved `host.` prefix, and `Schema` (json keys
 only) must parse as JSON. Admins can still set undeclared keys — specs improve
 the editor, they don't gate the store.
 
+## Casino games: wagering platform credits
+
+Every game is one of two kinds for the platform economy. **Game** (the
+default): players earn platform credits from the results you already post —
+you declare nothing and change nothing. **Casino**: players gamble their
+account-wide credits through your game. Declare it in your meta:
+
+```go
+func (g Game) Meta() kit.GameMeta {
+	return kit.GameMeta{
+		Slug: "blackjack", Name: "Blackjack",
+		Kind:                kit.GameKindCasino,
+		MaxPayoutMultiplier: 10, // MUST cover your largest possible win
+		CtxFeatures:         kit.CtxFeatCredits,
+		// ...
+	}
+}
+```
+
+The host owns every balance — your game never stores one. Take bets and pay
+out through the credits service:
+
+```go
+credits := r.Services().Credits
+
+// Show the stack.
+bal, err := credits.Balance(p)
+
+// Take the bet BEFORE the deal: the host atomically escrows it from the
+// player's account-wide balance. A refused wager means the bet did not
+// happen — render the error and stay in the betting phase.
+if err := credits.Wager(p, 100); err != nil {
+	switch {
+	case errors.Is(err, kit.ErrInsufficientCredits):
+		// tell the player to earn credits in Games, or take the lobby buy-back
+	case errors.Is(err, kit.ErrEconomyDisabled):
+		// the host's economy is off: render an out-of-service table
+	}
+	return
+}
+
+// Settle ONCE per stake with the GROSS (stake-inclusive) return:
+credits.Settle(p, 0)         // loss
+credits.Settle(p, 100)       // push: the stake back
+credits.Settle(p, 250)       // win: stake + winnings
+```
+
+Rules the host enforces (so you don't have to): repeated wagers before a
+settle accumulate into one open stake (double-down, side bets); every payout
+is clamped to stake × your declared `MaxPayoutMultiplier` — declare a
+ceiling that covers your top prize with every feature and gamble compounding
+applied, because a clamped honest jackpot is an authoring bug; a win
+sequence (free spins, a double-up ladder) keeps the triggering stake open
+and settles once with the total; open stakes refund if your room crashes,
+and are void after a restore — treat an in-flight hand as void when your
+room comes back. A player leaving mid-hand gets your normal `OnLeave`: you
+may settle their open stake as a loss per your table rules (do — otherwise
+leaving is a free cancel on every losing bet).
+
+Casino games never earn credits from posted results, and their leaderboard
+is platform-computed (biggest single win) — post nothing for it. Unit-test
+the flow with `kittest`: the Room double carries an in-memory wallet
+(`Credits`, `CreditsStakes`, `CreditsDisabled` to script the economy-off
+state). In the native dev runner (`go run .`) every player starts with 1000
+credits.
+
 ## Multiplayer
 
 Rooms hold 1–N players: your `GameMeta` declares the range, and the platform

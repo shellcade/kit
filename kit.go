@@ -82,6 +82,7 @@ type (
 	ConfigKeySpec   = game.ConfigKeySpec
 	ControlDecl     = game.ControlDecl
 	Lifecycle       = game.Lifecycle
+	GameKind        = game.GameKind
 	ConfigType      = game.ConfigType
 	Direction       = game.Direction
 	Aggregation     = game.Aggregation
@@ -113,6 +114,10 @@ const (
 
 	CtxFeatRosterEpoch = game.CtxFeatRosterEpoch
 	CtxFeatCharacter   = game.CtxFeatCharacter
+	CtxFeatCredits     = game.CtxFeatCredits
+
+	GameKindGame   = game.GameKindGame
+	GameKindCasino = game.GameKindCasino
 
 	LifecycleResumable = game.LifecycleResumable
 	LifecycleEphemeral = game.LifecycleEphemeral
@@ -191,6 +196,17 @@ type (
 	Account      = game.Account
 	AccountStore = game.AccountStore
 	ConfigStore  = game.ConfigStore
+	Credits      = game.Credits
+)
+
+// Credits errors (casino-kind games): match with errors.Is. ErrEconomyDisabled
+// means the host has the economy switched off — render an out-of-service
+// state, never trap.
+var (
+	ErrInsufficientCredits = game.ErrInsufficientCredits
+	ErrEconomyDisabled     = game.ErrEconomyDisabled
+	ErrCreditsDenied       = game.ErrCreditsDenied
+	ErrCreditsUnavailable  = game.ErrCreditsUnavailable
 )
 
 // (Frame).Clear resets a frame for reuse — prefer one long-lived frame plus

@@ -47,8 +47,9 @@ type Factory struct {
 	results map[string][]rec  // slug -> recorded results
 	handles map[string]string // accountID -> latest seen handle (all "live" in memory)
 
-	kv  *memKV
-	cfg *memConfig
+	kv      *memKV
+	cfg     *memConfig
+	credits map[string]*memCreditsAccount // accountID -> in-memory wallet
 }
 
 // rec is one recorded leaderboard result row.
@@ -94,6 +95,7 @@ func NewFactory(log *slog.Logger, reg *sdk.Registry) *Factory {
 		handles: map[string]string{},
 		kv:      &memKV{m: map[kvKey]kvVal{}},
 		cfg:     &memConfig{m: map[cfgKey][]byte{}},
+		credits: map[string]*memCreditsAccount{},
 	}
 }
 
@@ -101,7 +103,7 @@ func NewFactory(log *slog.Logger, reg *sdk.Registry) *Factory {
 // returned AccountStore, ConfigStore, and LeaderboardClient are all bound to the
 // slug, so a game can reach only its own per-game state.
 func (f *Factory) For(roomID, slug string) sdk.Services {
-	return sdk.Services{
+	svc := sdk.Services{
 		Leaderboard: &memLeaderboard{f: f},
 		Accounts:    &memAccounts{f: f, slug: slug},
 		Config:      &memConfigStore{cfg: f.cfg, slug: slug},
@@ -109,6 +111,12 @@ func (f *Factory) For(roomID, slug string) sdk.Services {
 		Spectate:    noopSpectate{},
 		Log:         f.log.With("room", roomID, "slug", slug),
 	}
+	// Casino-kind games get the in-memory credits backend (seed 1000, escrow
+	// per room+account, gross settle clamped by the game's declared
+	// multiplier where the registry knows it). Game-kind guests never reach
+	// it — the gameabi host rejects their calls before the service.
+	svc.Credits = &memCredits{f: f, roomID: roomID, slug: slug}
+	return svc
 }
 
 // Reader exposes the leaderboard read side (the lobby/UI surface, never handed
@@ -149,6 +157,77 @@ func (l *memLeaderboard) Post(slug string, r sdk.Result) {
 		})
 		l.f.record(pr.Player.AccountID, pr.Player.Handle)
 	}
+}
+
+// ---- credits (casino-kind games) ----
+
+// memCreditsAccount is one account's in-memory wallet: a balance seeded at
+// 1000 plus the per-room open stakes.
+type memCreditsAccount struct {
+	balance int64
+	stakes  map[string]int64 // roomID -> open stake
+}
+
+// memCredits implements sdk.CreditsService for `check`/`play`/conformance:
+// the real economy rules that matter to a guest (atomic escrow, gross settle,
+// declared-multiplier clamp) with none of the platform's persistence.
+type memCredits struct {
+	f      *Factory
+	roomID string
+	slug   string
+}
+
+func (c *memCredits) account(p sdk.Player) *memCreditsAccount {
+	acc, ok := c.f.credits[p.AccountID]
+	if !ok {
+		acc = &memCreditsAccount{balance: 1000, stakes: map[string]int64{}}
+		c.f.credits[p.AccountID] = acc
+	}
+	return acc
+}
+
+func (c *memCredits) Balance(_ context.Context, p sdk.Player) (int64, error) {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	return c.account(p).balance, nil
+}
+
+func (c *memCredits) Wager(_ context.Context, p sdk.Player, amount int64) error {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	if amount <= 0 {
+		return sdk.ErrCreditsDenied
+	}
+	acc := c.account(p)
+	if amount > acc.balance {
+		return sdk.ErrInsufficientCredits
+	}
+	acc.balance -= amount
+	acc.stakes[c.roomID] += amount
+	return nil
+}
+
+func (c *memCredits) Settle(_ context.Context, p sdk.Player, payout int64) error {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	acc := c.account(p)
+	stake := acc.stakes[c.roomID]
+	if stake == 0 {
+		return sdk.ErrCreditsDenied
+	}
+	if payout < 0 {
+		payout = 0
+	}
+	// Clamp to the game's declared multiplier when the registry knows it —
+	// the same rule a production host applies, so `check` exercises it.
+	if g, ok := c.f.reg.Get(c.slug); ok {
+		if m := g.Meta().MaxPayoutMultiplier; m > 0 && payout > stake*int64(m) {
+			payout = stake * int64(m)
+		}
+	}
+	delete(acc.stakes, c.roomID)
+	acc.balance += payout
+	return nil
 }
 
 // ---- per-user KV ----

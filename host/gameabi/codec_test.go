@@ -115,9 +115,10 @@ func TestDecodeMetaWireRevision(t *testing.T) {
 
 	// Pre-revision payload: a stamped meta truncated before the trailing u16
 	// (the kit ≤ v2.7.x shape) decodes as revision 0. The chop also takes the
-	// controls u16 count that now trails the revision (wire revision 6).
+	// controls u16 count (revision 6) and the game-kind u8+u32 (revision 7)
+	// that now trail the revision.
 	b := wire.EncodeMeta(wire.Meta{Slug: "x", Name: "X", MinPlayers: 1, MaxPlayers: 1, WireRevision: wire.Revision})
-	old, err := decodeMeta(b[:len(b)-4])
+	old, err := decodeMeta(b[:len(b)-9])
 	if err != nil {
 		t.Fatal(err)
 	}

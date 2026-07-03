@@ -133,6 +133,14 @@ func decodeMeta(b []byte) (sdk.GameMeta, error) {
 			Label: cd.Label,
 		})
 	}
+	// Game-kind trailer (minor addition, revision 7): validated like the
+	// other authored sections — kit SDKs fail at encode time, so a
+	// violation here is a malformed artifact, refused at load.
+	if err := wire.ValidateGameKind(wm.GameKind, wm.MaxPayoutMultiplier); err != nil {
+		return sdk.GameMeta{}, fmt.Errorf("gameabi: meta game kind: %w", err)
+	}
+	m.Kind = sdk.GameKind(wm.GameKind)
+	m.MaxPayoutMultiplier = wm.MaxPayoutMultiplier
 	return m, nil
 }
 

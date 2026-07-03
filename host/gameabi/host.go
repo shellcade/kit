@@ -2,6 +2,7 @@ package gameabi
 
 import (
 	"context"
+	"errors"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -1168,6 +1169,30 @@ func hostFunctions() []extism.HostFunction {
 					stack[0] = off
 				}
 			}),
+		hf(wire.FnCreditsBalance, []extism.ValueType{i64}, []extism.ValueType{i64},
+			func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+				h := currentHandler(ctx)
+				idx := int(stack[0])
+				stack[0] = uint64(h.creditsCall(ctx, idx, func(cctx context.Context, svc sdk.CreditsService, pl sdk.Player) (int64, error) {
+					return svc.Balance(cctx, pl)
+				}))
+			}),
+		hf(wire.FnCreditsWager, []extism.ValueType{i64, i64}, []extism.ValueType{i64},
+			func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+				h := currentHandler(ctx)
+				idx, amount := int(stack[0]), int64(stack[1])
+				stack[0] = uint64(h.creditsCall(ctx, idx, func(cctx context.Context, svc sdk.CreditsService, pl sdk.Player) (int64, error) {
+					return wire.CreditsOK, svc.Wager(cctx, pl, amount)
+				}))
+			}),
+		hf(wire.FnCreditsSettle, []extism.ValueType{i64, i64}, []extism.ValueType{i64},
+			func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+				h := currentHandler(ctx)
+				idx, payout := int(stack[0]), int64(stack[1])
+				stack[0] = uint64(h.creditsCall(ctx, idx, func(cctx context.Context, svc sdk.CreditsService, pl sdk.Player) (int64, error) {
+					return wire.CreditsOK, svc.Settle(cctx, pl, payout)
+				}))
+			}),
 	}
 }
 
@@ -1201,6 +1226,50 @@ func (h *wasmHandler) kvStore(idx int) sdk.KVStore {
 		return nil
 	}
 	return acct.Store()
+}
+
+// creditsCall runs one credits host call under the shared host-I/O rules:
+// mid-callback only, roster-index scoped (the host derives the account — a
+// guest can never wager for a seat outside its roster), kind-gated (the
+// credits functions exist only for casino-kind guests), store-timeout
+// bounded, and mapped onto the ABI status codes. A nil Credits service
+// reports economy-disabled — the functions are always exported at this ABI
+// revision, so a casino guest on a host without an economy degrades instead
+// of failing instantiation.
+func (h *wasmHandler) creditsCall(ctx context.Context, idx int, call func(context.Context, sdk.CreditsService, sdk.Player) (int64, error)) int64 {
+	if h == nil || h.cur == nil {
+		return wire.CreditsErrDenied
+	}
+	if h.game.meta.Kind != sdk.GameKindCasino {
+		return wire.CreditsErrDenied
+	}
+	if idx < 0 || idx >= len(h.roster) {
+		return wire.CreditsErrDenied
+	}
+	if h.svc.Credits == nil {
+		return wire.CreditsErrDisabled
+	}
+	hfStart := time.Now()
+	defer func() { h.cbHostNanos += time.Since(hfStart).Nanoseconds() }()
+	cctx, cancel := context.WithTimeout(ctx, kvTimeout)
+	defer cancel()
+	v, err := call(cctx, h.svc.Credits, h.roster[idx])
+	if ctx.Err() != nil {
+		h.hostIOExpired = true
+	}
+	switch {
+	case err == nil:
+		return v
+	case errors.Is(err, sdk.ErrInsufficientCredits):
+		return wire.CreditsErrInsufficient
+	case errors.Is(err, sdk.ErrEconomyDisabled):
+		return wire.CreditsErrDisabled
+	case errors.Is(err, sdk.ErrCreditsDenied):
+		return wire.CreditsErrDenied
+	default:
+		h.kvFailed("credits", idx, "", err)
+		return wire.CreditsErrUnavailable
+	}
 }
 
 // countingReader wraps the seeded entropy source and tallies the bytes the guest

@@ -39,6 +39,10 @@ const Version uint32 = 2
 //	    member-bearing forms)
 //	6 — declared-controls meta section (u16 count of {u8 kind ·
 //	    u32 rune | u8 key · str label} after wireRevision)
+//	7 — game-kind meta section (u8 kind · u32 maxPayoutMultiplier after
+//	    the controls section), the credits host functions
+//	    (credits_balance/credits_wager/credits_settle) for casino-kind
+//	    guests, and the CtxFeatCredits declaration bit
 //
 // Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
 // only 0 or values ≥ 4 are ever observed on the wire. Any future change that
@@ -50,7 +54,7 @@ const Version uint32 = 2
 // (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
 // TestRustWireRevisionMatchesWire in this package) — the two must change in
 // lockstep.
-const Revision uint16 = 6
+const Revision uint16 = 7
 
 // Guest export names.
 const (
@@ -79,6 +83,9 @@ const (
 	FnKVSet           = "kv_set"
 	FnKVDelete        = "kv_delete"
 	FnConfigGet       = "config_get"
+	FnCreditsBalance  = "credits_balance"
+	FnCreditsWager    = "credits_wager"
+	FnCreditsSettle   = "credits_settle"
 )
 
 // Frame geometry: 80x24 cells, 24 bytes per v2 grapheme cell.
@@ -198,8 +205,35 @@ const (
 	// after each member's Kind byte in both member-bearing forms.
 	CtxFeatCharacter uint32 = 1 << 1
 
+	// CtxFeatCredits declares that the guest calls the credits host
+	// functions (casino-kind games; ABI.md §3). Declaration-only: it changes
+	// no callback encoding, and hosts reject the calls from game-kind guests
+	// regardless.
+	CtxFeatCredits uint32 = 1 << 2
+
 	// KnownCtxFeatures is the mask of bits this wire revision defines.
-	KnownCtxFeatures uint32 = CtxFeatRosterEpoch | CtxFeatCharacter
+	KnownCtxFeatures uint32 = CtxFeatRosterEpoch | CtxFeatCharacter | CtxFeatCredits
+)
+
+// Game kinds (the trailing game-kind meta section, revision 7): every game
+// is either a Game (players earn platform credits from results) or a Casino
+// game (players gamble credits through the credits host functions). Absent
+// section = GameKindGame, so every pre-revision-7 artifact keeps its meaning.
+const (
+	GameKindGame   uint8 = 0
+	GameKindCasino uint8 = 1
+)
+
+// Credits host-function status codes (ABI.md §3). credits_balance returns
+// the balance (>= 0) or one of these negatives; credits_wager and
+// credits_settle return CreditsOK or a negative. All three are i64 on the
+// wire.
+const (
+	CreditsOK              int64 = 0
+	CreditsErrInsufficient int64 = -1 // wager exceeds the balance or a platform bet limit
+	CreditsErrDisabled     int64 = -2 // the economy is disabled on this host: render out-of-service, do not trap
+	CreditsErrDenied       int64 = -3 // not a casino-kind guest, unknown seat, or no open stake to settle
+	CreditsErrUnavailable  int64 = -4 // transient store failure; the bet did not happen
 )
 
 // Meta is the packed GameMeta.
@@ -263,6 +297,20 @@ type Meta struct {
 	// (count 0 when empty); decoders treat a payload ending after the
 	// wire-revision field as a valid older meta with no declarations.
 	Controls []ControlDecl
+
+	// GameKind + MaxPayoutMultiplier form the trailing game-kind section
+	// (spec minor addition, revision 7; u8 + u32 after the controls
+	// section): GameKind classifies the game for the platform economy
+	// (GameKindGame earns credits from results; GameKindCasino wagers them
+	// through the credits host functions), and MaxPayoutMultiplier is a
+	// casino game's declared per-stake payout ceiling — the host clamps
+	// every settlement to stake x this multiplier (itself clamped by a
+	// platform ceiling). Encoders always write the section; decoders treat
+	// a payload ending after the controls section as a valid older meta of
+	// kind GameKindGame. MaxPayoutMultiplier MUST be 0 for GameKindGame and
+	// >= 1 for GameKindCasino (ValidateGameKind).
+	GameKind            uint8
+	MaxPayoutMultiplier uint32
 }
 
 // Lifecycle values for the meta trailer.
@@ -644,6 +692,10 @@ func EncodeMeta(m Meta) []byte {
 		}
 		w.Str(cd.Label)
 	}
+	// Trailing game-kind section (spec minor addition, revision 7). Always
+	// written; older decoders ignore the bytes.
+	w.U8(m.GameKind)
+	w.U32(m.MaxPayoutMultiplier)
 	return w.B
 }
 
@@ -720,6 +772,12 @@ func DecodeMeta(b []byte) (Meta, error) {
 			cd.Label = r.Str()
 			m.Controls = append(m.Controls, cd)
 		}
+	}
+	// Trailing game-kind section, presence-guarded: absent = GameKindGame
+	// with no declared multiplier (every pre-revision-7 artifact).
+	if !r.Bad && r.Off < len(r.B) {
+		m.GameKind = r.U8()
+		m.MaxPayoutMultiplier = r.U32()
 	}
 	if err := r.Err(); err != nil {
 		return Meta{}, err
@@ -850,6 +908,27 @@ func ValidateMetaTrailer(ctxFeatures uint32, heartbeatMS uint16) error {
 	}
 	if heartbeatMS != 0 && (heartbeatMS < HeartbeatMinMS || heartbeatMS > HeartbeatMaxMS) {
 		return fmt.Errorf("wire: HeartbeatMS %d outside 0 or [%d,%d]", heartbeatMS, HeartbeatMinMS, HeartbeatMaxMS)
+	}
+	return nil
+}
+
+// ValidateGameKind enforces the game-kind authoring rules, shared by SDK
+// encoders and host/CLI decoders: a known kind; a casino game MUST declare
+// its payout ceiling (>= 1 — the host clamps every settlement to stake x
+// multiplier, so an undeclared ceiling would freeze payouts at zero); a
+// game-kind game MUST NOT declare one (it cannot wager).
+func ValidateGameKind(kind uint8, maxPayoutMultiplier uint32) error {
+	switch kind {
+	case GameKindGame:
+		if maxPayoutMultiplier != 0 {
+			return fmt.Errorf("wire: game-kind game declares MaxPayoutMultiplier %d (must be 0)", maxPayoutMultiplier)
+		}
+	case GameKindCasino:
+		if maxPayoutMultiplier == 0 {
+			return errors.New("wire: casino game must declare MaxPayoutMultiplier >= 1")
+		}
+	default:
+		return fmt.Errorf("wire: unknown game kind %d", kind)
 	}
 	return nil
 }

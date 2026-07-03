@@ -80,6 +80,7 @@ func Main(g Game) {
 		members: []Player{},
 		rng:     rand.New(rand.NewSource(s)),
 		kv:      map[string][]byte{},
+		credits: map[string]*nativeCreditsState{},
 		config:  cfgVals,
 	}
 	// Virtual clock: with -seed, the room clock starts at a fixed epoch derived
@@ -271,6 +272,7 @@ type nativeRoom struct {
 	rng     *rand.Rand
 	kv      map[string][]byte // keyed by account + key
 	config  map[string]string
+	credits map[string]*nativeCreditsState // keyed by account (dev credits fake)
 	ended   bool
 
 	virtual bool          // -seed: Now() reads the virtual clock below
@@ -363,7 +365,55 @@ func (r *nativeRoom) Post(Result)                  {}
 func (r *nativeRoom) Log(msg string)               { fmt.Fprintln(os.Stderr, "\r"+msg) }
 
 func (r *nativeRoom) Services() Services {
-	return Services{Accounts: nativeAccounts{r}, Config: nativeConfig{r}}
+	return Services{Accounts: nativeAccounts{r}, Config: nativeConfig{r}, Credits: nativeCredits{r}}
+}
+
+// nativeCredits is the dev-runner credits fake: every account starts at 1000,
+// wagers escrow into an open stake, settles credit the gross payout — enough
+// to iterate a casino game natively without a host economy. No multiplier
+// clamp (that is host policy, exercised by `shellcade-kit check`).
+type nativeCreditsState struct {
+	balance int64
+	stake   int64
+}
+
+type nativeCredits struct{ r *nativeRoom }
+
+func (c nativeCredits) state(p Player) *nativeCreditsState {
+	st, ok := c.r.credits[p.AccountID]
+	if !ok {
+		st = &nativeCreditsState{balance: 1000}
+		c.r.credits[p.AccountID] = st
+	}
+	return st
+}
+
+func (c nativeCredits) Balance(p Player) (int64, error) { return c.state(p).balance, nil }
+
+func (c nativeCredits) Wager(p Player, amount int64) error {
+	st := c.state(p)
+	if amount <= 0 {
+		return ErrCreditsDenied
+	}
+	if amount > st.balance {
+		return ErrInsufficientCredits
+	}
+	st.balance -= amount
+	st.stake += amount
+	return nil
+}
+
+func (c nativeCredits) Settle(p Player, payout int64) error {
+	st := c.state(p)
+	if st.stake == 0 {
+		return ErrCreditsDenied
+	}
+	if payout < 0 {
+		payout = 0
+	}
+	st.stake = 0
+	st.balance += payout
+	return nil
 }
 
 type nativeAccounts struct{ r *nativeRoom }

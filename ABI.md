@@ -91,6 +91,9 @@ means not-found.
 | `kv_set` | (i64 playerIdx, ptr key, ptr val, ptr rule) | rule: `keep-winner` `keep-loser` `sum` `max`; for `sum`/`max` the value MUST be a base-10 ASCII int64 (unparsable values degrade to keep-winner at merge time) |
 | `kv_delete` | (i64 playerIdx, ptr key) | |
 | `config_get` | (ptr key) → ptr | read-only per-game config |
+| `credits_balance` | (i64 playerIdx) → i64 | the player's account-wide credits balance (≥ 0), or a negative status (below); casino-kind guests only |
+| `credits_wager` | (i64 playerIdx, i64 amount) → i64 | atomically escrow `amount` from the balance into the seat's open stake; 0 ok or a negative status |
+| `credits_settle` | (i64 playerIdx, i64 payout) → i64 | close the seat's open stake with the GROSS (stake-inclusive) payout, clamped to stake × the declared `maxPayoutMultiplier`; 0 ok or a negative status |
 
 `send` and `identical` return an `i64` whose **low 32 bits carry the epoch**
 the guest MUST stamp its baseline with for that slot; the **upper 32 bits are
@@ -110,6 +113,24 @@ never to one of them alone.
 Scoping is host-side: the guest names only a roster index and a key — the
 account and the game's namespace are derived by the host. A guest cannot
 address another game's data or a non-member account.
+
+**Credits (casino-kind games, revision 7).** The three `credits_*` functions
+exist for guests whose meta declares the casino kind (§4.2); the host rejects
+calls from game-kind guests. Negative returns are shared status codes:
+`-1` insufficient (the wager exceeded the balance or a platform bet limit —
+the bet did not happen) · `-2` disabled (the host's economy is switched off:
+render an out-of-service state, never trap) · `-3` denied (game-kind guest,
+unknown seat, or no open stake to settle) · `-4` unavailable (transient
+store failure). Wager semantics: repeated wagers before settlement
+accumulate into ONE open stake per seat (double-down, side bets), bounded by
+platform bet limits. Settle semantics: the payout is GROSS — a loss settles
+`0`, a push settles the stake, a win settles stake + winnings; a win
+sequence spanning several game events (free spins, a double-up ladder)
+keeps the triggering stake open and settles once with the total. The host
+clamps every settlement to stake × the game's declared payout multiplier
+(itself clamped by a platform ceiling), refunds open stakes on paths where
+no game code can run (crash, teardown), and voids in-flight stakes across a
+restore — a game never persists a balance of its own.
 
 ## 4. Payload encodings
 
@@ -184,7 +205,7 @@ u16 configSpecCount                                              (trailing; see 
   per spec: str key · str title · str description
             · u8 type (0 text · 1 number · 2 bool · 3 json)
             · str default ("" = not declared) · str schema ("" = none; json only)
-u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch · bit 1 = CtxFeatCharacter
+u32 ctxFeatures       trailing large-room section (see below); bit 0 = CtxFeatRosterEpoch · bit 1 = CtxFeatCharacter · bit 2 = CtxFeatCredits (declaration-only)
 u16 heartbeatMS       0 = no declaration
 u8  lifecycle         trailing (see below); 0 resumable · 1 ephemeral · 2 resident
 u16 wireRevision      trailing (see below); 0 = unknown (the meta predates the field)
@@ -192,6 +213,8 @@ u16 controlCount      trailing declared-controls section (see below)
   per control: u8 kind (0 rune · 1 key)
                · if rune: u32 rune · if key: u8 key (the input key codes, §2)
                · str label
+u8  gameKind          trailing game-kind section (see below); 0 game · 1 casino
+u32 maxPayoutMultiplier   casino payout ceiling (0 for game-kind)
 ```
 
 `slug` must be non-empty; the host refuses artifacts whose slug or version it
@@ -263,7 +286,8 @@ never set by the author, and declares the newest wire feature the artifact
 may assume the host understands. The ledger so far: `1` config-spec section
 · `2` large-room section + roster-epoch sentinels · `3` lifecycle byte ·
 `4` this field itself · `5` per-member ctx character section behind
-`CtxFeatCharacter` · `6` declared-controls section. `0` means unknown: the meta predates the field
+`CtxFeatCharacter` · `6` declared-controls section · `7` game-kind section +
+the `credits_*` host functions + `CtxFeatCredits`. `0` means unknown: the meta predates the field
 (revisions 1–3 existed before it, so artifacts of those eras cannot declare
 them — only `0` or values ≥ `4` are ever observed). A hand-rolled guest
 (§4.7) SHOULD stamp the revision whose features it actually uses; omitting
@@ -302,6 +326,24 @@ framed past). Declared controls must satisfy (`wire.ValidateControls`, the
 shared rule set): a printable rune (≥ U+0020) or an assigned key code (1–9);
 a non-empty label of at most 16 runes; no duplicate inputs; at most 32
 declarations. SDKs enforce these at `meta()` encode time.
+
+**Game-kind section (minor addition, revision 7).** A trailing section after
+the declared-controls section, presence-guarded under the same rules (absent
+= kind `0` with no multiplier — the reading for every pre-revision-7
+artifact): `u8 gameKind` (`0` game · `1` casino) and `u32
+maxPayoutMultiplier`. The kind classifies the game for the platform economy:
+**game** titles earn platform credits from the results they post; **casino**
+titles wager credits through the `credits_*` host functions (§3) and never
+earn. `maxPayoutMultiplier` is a casino game's declared per-stake payout
+ceiling — the host clamps every settlement to the seat's open stake times
+this multiplier (after applying its own platform ceiling), so it MUST cover
+the game's largest configurable outcome (top prize × any feature/gamble
+compounding): a clamped honest jackpot is an authoring bug. Validation
+(`wire.ValidateGameKind`, shared): a known kind; casino requires a
+multiplier ≥ 1; game requires 0. SDKs enforce this at `meta()` encode time;
+hosts refuse violating artifacts at load. Casino games SHOULD also declare
+`CtxFeatCredits` (bit 2) — declaration-only (no encoding change), it lets
+hosts and tooling see that the artifact wagers.
 
 ### 4.3 Frame (the delta container and its cell)
 

@@ -234,7 +234,36 @@ type GameMeta struct {
 	// served by the canonical vocabulary needs none. Invalid declarations
 	// are an authoring bug and panic at meta encode time.
 	Controls []ControlDecl
+
+	// Kind classifies the game for the platform economy: GameKindGame (the
+	// zero value — players earn platform credits from the results the game
+	// posts) or GameKindCasino (players gamble their credits through the
+	// room's Credits service). Casino games MUST also declare
+	// MaxPayoutMultiplier and SHOULD declare CtxFeatCredits; the host
+	// rejects credits calls from game-kind guests. An invalid combination
+	// is an authoring bug and panics at meta encode time.
+	Kind GameKind
+
+	// MaxPayoutMultiplier is a casino game's declared payout ceiling: the
+	// host clamps every settlement to the seat's open stake times this
+	// multiplier (the platform applies its own ceiling on top). It MUST
+	// cover the game's largest configurable outcome — a clamped honest
+	// jackpot is an authoring bug. Required >= 1 for GameKindCasino; must
+	// be 0 for GameKindGame.
+	MaxPayoutMultiplier uint32
 }
+
+// GameKind classifies a game for the platform economy.
+type GameKind uint8
+
+const (
+	// GameKindGame is the default: a skill/score game whose results earn
+	// platform credits.
+	GameKindGame GameKind = GameKind(wire.GameKindGame)
+	// GameKindCasino is a gambling game: players wager their account-wide
+	// credits through the Credits service; the game never earns.
+	GameKindCasino GameKind = GameKind(wire.GameKindCasino)
+)
 
 // ControlDecl declares one extra control: the exact Input it sends (a
 // printable rune or a named key) and a short display label of at most 16
@@ -275,6 +304,12 @@ const CtxFeatRosterEpoch = wire.CtxFeatRosterEpoch
 // Player.Character is always the zero value. Declare it in
 // GameMeta.CtxFeatures.
 const CtxFeatCharacter = wire.CtxFeatCharacter
+
+// CtxFeatCredits declares that the game calls the credits host functions
+// (casino-kind games). Declaration-only — it changes no callback encoding —
+// but hosts and tooling use it to know the artifact wagers. Declare it in
+// GameMeta.CtxFeatures on casino games.
+const CtxFeatCredits = wire.CtxFeatCredits
 
 // Status is a player's terminal outcome.
 type Status uint8

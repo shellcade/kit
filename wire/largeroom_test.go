@@ -115,9 +115,10 @@ func TestMetaTrailerRoundTrip(t *testing.T) {
 		t.Fatalf("trailer round-trip = features %#x heartbeat %d", got.CtxFeatures, got.HeartbeatMS)
 	}
 
-	// Pre-large-room payload: chop the trailing 11 bytes
-	// (u32 + u16 large-room, u8 lifecycle, u16 wireRevision, u16 controls).
-	old := b[:len(b)-11]
+	// Pre-large-room payload: chop the trailing 16 bytes (u32 + u16
+	// large-room, u8 lifecycle, u16 wireRevision, u16 controls, u8 + u32
+	// game-kind).
+	old := b[:len(b)-16]
 	got, err = DecodeMeta(old)
 	if err != nil {
 		t.Fatalf("pre-trailer decode: %v", err)
@@ -127,9 +128,9 @@ func TestMetaTrailerRoundTrip(t *testing.T) {
 	}
 
 	// Pre-lifecycle payload (kit v2.6.0 era): chop the lifecycle byte, the
-	// wire-revision u16, and the controls u16 — the large-room section
-	// decodes, lifecycle defaults to resumable.
-	v26 := b[:len(b)-5]
+	// wire-revision u16, the controls u16, and the game-kind u8+u32 — the
+	// large-room section decodes, lifecycle defaults to resumable.
+	v26 := b[:len(b)-10]
 	got, err = DecodeMeta(v26)
 	if err != nil {
 		t.Fatalf("pre-lifecycle decode: %v", err)
@@ -155,9 +156,9 @@ func TestMetaWireRevisionRoundTrip(t *testing.T) {
 		t.Fatalf("wire revision round-trip = %d, want %d", got.WireRevision, Revision)
 	}
 
-	// Pre-revision payload (kit v2.7.x era): chop the trailing u16 and the
-	// controls u16 that follows it.
-	v27 := b[:len(b)-4]
+	// Pre-revision payload (kit v2.7.x era): chop the trailing u16, the
+	// controls u16, and the game-kind u8+u32 that follow it.
+	v27 := b[:len(b)-9]
 	got, err = DecodeMeta(v27)
 	if err != nil {
 		t.Fatalf("pre-revision decode: %v", err)

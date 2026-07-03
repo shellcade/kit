@@ -45,6 +45,19 @@ func hostKVDelete(playerIdx uint64, keyOff uint64)
 //go:wasmimport extism:host/user config_get
 func hostConfigGet(keyOff uint64) uint64
 
+// Credits host functions (revision 7; casino-kind guests). Each returns an
+// i64 status: credits_balance returns the balance (>= 0) or a negative
+// wire.CreditsErr*; wager/settle return wire.CreditsOK or a negative.
+
+//go:wasmimport extism:host/user credits_balance
+func hostCreditsBalance(playerIdx uint64) uint64
+
+//go:wasmimport extism:host/user credits_wager
+func hostCreditsWager(playerIdx uint64, amount uint64) uint64
+
+//go:wasmimport extism:host/user credits_settle
+func hostCreditsSettle(playerIdx uint64, payout uint64) uint64
+
 // alloc copies b into Extism kernel memory; the caller MUST Free it after the
 // host call returns (kernel memory is not garbage collected).
 func alloc(b []byte) pdk.Memory { return pdk.AllocateBytes(b) }
