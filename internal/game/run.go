@@ -18,6 +18,16 @@ var (
 	theGame Game
 	handler Handler
 	rng     *rand.Rand
+	// theRoom is the single, persistent Room, refreshed in place each callback
+	// (its ctx is reassigned in decodeCall). The game's Services are built ONCE
+	// from it at NewRoom and stored by the game, so any roster-dependent surface
+	// they expose must see the LIVE roster: Credits resolves a player's host
+	// index against ctx.members, so a fresh room per callback would bind the
+	// game's stored svc.Credits to the START roster forever — denying credits to
+	// everyone who joins after start (a solo player joins after OnStart, so its
+	// start roster is empty and every Balance/Wager is denied). One reused room
+	// keeps the stored Services pointed at the current ctx.
+	theRoom = &room{}
 )
 
 // Run installs the game. The instance's Handler is created lazily on start.
@@ -68,7 +78,12 @@ func decodeCall() (*room, *wire.Rd) {
 	if rosterChanged {
 		invalidateBaselines()
 	}
-	rm := &room{ctx: ctx, rng: rng}
+	// Refresh the single persistent room in place (NOT a fresh room each
+	// callback) so the game's once-built Services keep resolving against the
+	// live ctx — see theRoom.
+	theRoom.ctx = ctx
+	theRoom.rng = rng
+	rm := theRoom
 	if epochMismatch && !epochMismatchLogged {
 		// Host fault: an unchanged-form ctx carried an epoch we don't hold.
 		// Degraded (cached roster kept, baselines invalidated) — warn once.
