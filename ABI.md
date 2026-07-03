@@ -94,6 +94,7 @@ means not-found.
 | `credits_balance` | (i64 playerIdx) → i64 | the player's account-wide credits balance (≥ 0), or a negative status (below); casino-kind guests only |
 | `credits_wager` | (i64 playerIdx, i64 amount) → i64 | atomically escrow `amount` from the balance into the seat's open stake; 0 ok or a negative status |
 | `credits_settle` | (i64 playerIdx, i64 payout) → i64 | close the seat's open stake with the GROSS (stake-inclusive) payout, clamped to stake × the declared `maxPayoutMultiplier`; 0 ok or a negative status |
+| `credits_buyback` | (i64 playerIdx) → i64 | broke-relief rebuy for a player who ran out mid-session; returns the new balance (≥ 0) or a negative status. The host gates it (broke-only floor + per-day rebuy limit); a refusal is `-1` insufficient with the balance unchanged. Revision 8. |
 
 `send` and `identical` return an `i64` whose **low 32 bits carry the epoch**
 the guest MUST stamp its baseline with for that slot; the **upper 32 bits are
@@ -114,9 +115,10 @@ Scoping is host-side: the guest names only a roster index and a key — the
 account and the game's namespace are derived by the host. A guest cannot
 address another game's data or a non-member account.
 
-**Credits (casino-kind games, revision 7).** The three `credits_*` functions
-exist for guests whose meta declares the casino kind (§4.2); the host rejects
-calls from game-kind guests. Negative returns are shared status codes:
+**Credits (casino-kind games, revision 7; `credits_buyback` added in
+revision 8).** The `credits_*` functions exist for guests whose meta declares
+the casino kind (§4.2); the host rejects calls from game-kind guests. Negative
+returns are shared status codes:
 `-1` insufficient (the wager exceeded the balance or a platform bet limit —
 the bet did not happen) · `-2` disabled (the host's economy is switched off:
 render an out-of-service state, never trap) · `-3` denied (game-kind guest,
@@ -130,7 +132,14 @@ keeps the triggering stake open and settles once with the total. The host
 clamps every settlement to stake × the game's declared payout multiplier
 (itself clamped by a platform ceiling), refunds open stakes on paths where
 no game code can run (crash, teardown), and voids in-flight stakes across a
-restore — a game never persists a balance of its own.
+restore — a game never persists a balance of its own. Buyback semantics
+(`credits_buyback`, revision 8): a casino guest offers a broke player a rebuy;
+the host applies it only when the player is broke (balance below a platform
+floor, open stake excluded) and under a per-day rebuy limit, credits the
+platform's buyback amount to the account AND makes it wagerable in the current
+seat, and returns the new balance. A refusal (solvent, or the daily limit
+reached) is `-1` insufficient with the balance unchanged — render it, do not
+retry.
 
 ## 4. Payload encodings
 

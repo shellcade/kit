@@ -33,6 +33,11 @@ type CreditsService interface {
 	// Settle closes the seat's open stake with the gross payout (0 = loss),
 	// clamped by the implementation.
 	Settle(ctx context.Context, p Player, payout int64) error
+	// Buyback applies the platform broke-relief rebuy for a player who ran
+	// out mid-session and returns the new balance. The implementation owns
+	// the gate (broke-only floor, per-day rebuy limit) and makes the credited
+	// amount wagerable in the seat; a refusal is ErrInsufficientCredits.
+	Buyback(ctx context.Context, p Player) (int64, error)
 }
 
 // ServicesFactory constructs a per-room Services. It has distinct

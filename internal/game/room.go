@@ -189,6 +189,18 @@ func (c creditsSvc) Settle(p Player, payout int64) error {
 	return creditsErr(int64(hostCreditsSettle(uint64(idx), uint64(payout))))
 }
 
+func (c creditsSvc) Buyback(p Player) (int64, error) {
+	idx := c.index(p)
+	if idx < 0 {
+		return 0, ErrCreditsDenied
+	}
+	code := int64(hostCreditsBuyback(uint64(idx)))
+	if code < 0 {
+		return 0, creditsErr(code)
+	}
+	return code, nil
+}
+
 type accountStore struct{ r *room }
 
 func (s accountStore) For(p Player) Account {

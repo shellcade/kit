@@ -56,6 +56,10 @@ func (f *fakeCredits) Settle(context.Context, sdk.Player, int64) error {
 	f.calls++
 	return f.err
 }
+func (f *fakeCredits) Buyback(context.Context, sdk.Player) (int64, error) {
+	f.calls++
+	return f.balance, f.err
+}
 
 // creditsCall's gating and error mapping: game-kind guests, out-of-roster
 // indices, and a host without an economy are refused BEFORE any service

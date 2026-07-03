@@ -204,7 +204,7 @@ fn decode_members(r: &mut Rd<'_>, n: usize, features: u32) -> Vec<Player> {
 /// `wire.Revision` — one protocol constant, asserted equal in lockstep by
 /// the Go cross-check test `wire.TestRustWireRevisionMatchesWire` (which
 /// parses this source line; keep the declaration on one line).
-pub(crate) const WIRE_REVISION: u16 = 7;
+pub(crate) const WIRE_REVISION: u16 = 8;
 
 /// Credits host-function status codes (ABI.md §3): `credits_balance` returns
 /// the balance (>= 0) or one of the negatives; wager/settle return
@@ -635,7 +635,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e000000000000000000000000070000000000000000";
+        let golden = "0600676f6c64656e0600476f6c64656e0e00676f6c64656e206669787475726501000400020001006101006200000000000001050073636f726501000202000c006f6464732d76617269616e740c004f6464732076617269616e740a005041522073686565742e0312007b226e616d65223a2244656661756c74227d11007b2274797065223a226f626a656374227d04006d6f7464060042616e6e65720d00466c6f6f722062616e6e65722e000000000000000000000000080000000000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust meta encoding diverges from the Go golden");
     }
@@ -658,7 +658,7 @@ mod tests {
             ],
             ..Meta::DEFAULT
         };
-        let golden = "040063746c67040043746c47000001000200000000000000000000000000000000000000070002000072000000060052455349474e01020400554e444f0000000000";
+        let golden = "040063746c67040043746c47000001000200000000000000000000000000000000000000080002000072000000060052455349474e01020400554e444f0000000000";
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, golden, "Rust controls encoding diverges from the Go golden");
     }
@@ -790,10 +790,10 @@ mod tests {
             ..Meta::DEFAULT
         };
         let got: String = encode_meta(&m).iter().map(|b| format!("{b:02x}")).collect();
-        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 7 LE
+        // trailer = u32 1 LE + u16 100 LE + u8 lifecycle + u16 revision 8 LE
         //         + u16 controls count 0 + u8 kind 0 + u32 multiplier 0
         //         = "01000000" + "6400" + "00" + "0700" + "0000" + "00" + "00000000"
-        assert!(got.ends_with("000001000000640000070000000000000000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-36..]);
+        assert!(got.ends_with("000001000000640000080000000000000000"), "trailer bytes diverge from the Go encoding: ...{}", &got[got.len()-36..]);
     }
 }
 

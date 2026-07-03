@@ -85,6 +85,17 @@ type Room struct {
 	// credits call returns kit.ErrEconomyDisabled, the state a casino game
 	// must render as out-of-service rather than trap.
 	CreditsDisabled bool
+
+	// CreditsBuybackFloor / CreditsBuybackAmount configure the broke-relief
+	// rebuy (defaults 100 / 1000, the platform defaults). Buyback refuses a
+	// solvent player (balance + open stake >= floor) with
+	// ErrInsufficientCredits and otherwise tops the balance up to the amount.
+	// The kittest double does NOT enforce the platform's per-day rebuy limit
+	// (that lives in the durable ledger); CreditsRebuys counts calls that
+	// credited, for test assertions.
+	CreditsBuybackFloor  int64
+	CreditsBuybackAmount int64
+	CreditsRebuys        map[string]int
 }
 
 // NewRoom returns a Room with the given members, a seeded RNG (seed 1), and a
@@ -266,6 +277,34 @@ func (c credits) Settle(p kit.Player, payout int64) error {
 	delete(c.r.CreditsStakes, p.AccountID)
 	c.r.Credits[p.AccountID] = c.balance(p.AccountID) + payout
 	return nil
+}
+
+func (c credits) Buyback(p kit.Player) (int64, error) {
+	if c.r.CreditsDisabled {
+		return 0, kit.ErrEconomyDisabled
+	}
+	floor := c.r.CreditsBuybackFloor
+	if floor == 0 {
+		floor = 100
+	}
+	amount := c.r.CreditsBuybackAmount
+	if amount == 0 {
+		amount = 1000
+	}
+	bal := c.balance(p.AccountID)
+	// Broke-only: a solvent player — counting any open stake — is refused,
+	// exactly as the platform floor gate does.
+	if bal+c.r.CreditsStakes[p.AccountID] >= floor {
+		return bal, kit.ErrInsufficientCredits
+	}
+	if bal < amount {
+		c.r.Credits[p.AccountID] = amount
+	}
+	if c.r.CreditsRebuys == nil {
+		c.r.CreditsRebuys = map[string]int{}
+	}
+	c.r.CreditsRebuys[p.AccountID]++
+	return c.r.Credits[p.AccountID], nil
 }
 
 type config struct{ r *Room }

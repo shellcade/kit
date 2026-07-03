@@ -43,6 +43,10 @@ const Version uint32 = 2
 //	    the controls section), the credits host functions
 //	    (credits_balance/credits_wager/credits_settle) for casino-kind
 //	    guests, and the CtxFeatCredits declaration bit
+//	8 — the credits_buyback host function: a casino-kind guest triggers a
+//	    mid-session broke-relief rebuy (returns the new balance like
+//	    credits_balance). No meta-payload change; a new host function the
+//	    guest may call.
 //
 // Revisions 1–3 predate the field, so artifacts of those eras decode as 0;
 // only 0 or values ≥ 4 are ever observed on the wire. Any future change that
@@ -54,7 +58,7 @@ const Version uint32 = 2
 // (rust/src/wire.rs WIRE_REVISION, asserted equal to this constant by
 // TestRustWireRevisionMatchesWire in this package) — the two must change in
 // lockstep.
-const Revision uint16 = 7
+const Revision uint16 = 8
 
 // Guest export names.
 const (
@@ -86,6 +90,7 @@ const (
 	FnCreditsBalance  = "credits_balance"
 	FnCreditsWager    = "credits_wager"
 	FnCreditsSettle   = "credits_settle"
+	FnCreditsBuyback  = "credits_buyback"
 )
 
 // Frame geometry: 80x24 cells, 24 bytes per v2 grapheme cell.
