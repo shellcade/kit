@@ -702,6 +702,66 @@ Authoring tips:
 The `smoke` package exposes the same machinery as Go API (`smoke.Parse`,
 `smoke.Run`, `smoke.RenderANSI`) if you want shots inside your own tests.
 
+## Preview loops: the games-screen art block
+
+The arcade's games screen shows a little looping animation beside each game's
+blurb — a hand-authored preview loop, distinct from the automatic smoke shots.
+You author it as a `preview/` directory: a `preview.yaml` manifest plus one
+plain-text file per frame, and `shellcade-kit preview pack` compiles the whole
+thing into a single self-contained `preview.scp` bundle that ships as a release
+asset alongside your `.wasm`.
+
+```
+preview/
+  preview.yaml
+  01-idle.frame
+  02-spin.frame
+  03-win.frame
+```
+
+The manifest lists frames in playback order, each with a file and a duration:
+
+```yaml
+frames:
+  - file: 01-idle.frame
+    ms: 900       # hold this frame 900ms
+  - file: 02-spin.frame
+    ms: 120
+  - file: 03-win.frame
+    ms: 600
+```
+
+Looping is implicit — playback runs the frames in order, then loops from the
+last back to the first. There is nothing to configure.
+
+Each frame file is plain text: **at most 7 rows of at most 46 display cells**
+(the art block's interior — the arcade draws the border). Short rows and short
+frames are space-padded for you; the packer **never truncates**, so an oversize
+row is a hard error naming the offending file and line — trim the art yourself.
+Wide glyphs (CJK, most emoji) count as two cells.
+
+The frame-text contract is **printable text plus ANSI SGR color only**:
+
+- `ESC[…m` styling sequences are allowed (colors, bold, reverse). Any other
+  escape — cursor movement, screen clears, anything that isn't SGR — is
+  rejected, as are raw control characters and invalid UTF-8.
+- **No variation selectors (VS16 `U+FE0F`), zero-width joiners, or keycap
+  combiners.** These render at terminal-dependent widths: a frame that measures
+  46 cells in the packer can overflow the art block on a real terminal and
+  desync every column to its right. Compose your art from single, unambiguous
+  glyphs. (Styling need not be closed at end of line — the packer resets it
+  before the padding.)
+
+Pack it and ship the bundle:
+
+```sh
+shellcade-kit preview pack preview/ -o preview.scp
+```
+
+The bundle is small (capped at 64 KiB) and versioned; the arcade re-runs every
+one of these checks when it ingests your bundle, so a preview that
+`preview pack` accepts is one the arcade will accept.
+
 ## The full loop
 
 | Stage | Command | What it proves |

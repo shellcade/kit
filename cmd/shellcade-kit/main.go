@@ -6,6 +6,7 @@
 //	shellcade-kit lint-width <path>...                 lint source for wide-glyph width-contract violations only
 //	shellcade-kit play  <gamedir|game.wasm> [flags]    play the game in a local 80x24 terminal room
 //	shellcade-kit smoke <gamedir|game.wasm>            run the game's smoke.yaml and write the shot files
+//	shellcade-kit preview pack <dir> [-o out.scp]      compile a games-screen preview loop into a preview.scp bundle
 //
 // check/play/smoke accept either a built .wasm or the game directory — a
 // directory is built first (TinyGo for go.mod, cargo wasm32-wasip1 for
@@ -109,6 +110,9 @@ func main() {
 			fmt.Fprintln(os.Stderr, "shellcade-kit:", err)
 			os.Exit(1)
 		}
+	case "preview":
+		// preview pack <dir> [-o out.scp]: compile a games-screen preview loop.
+		runPreview(os.Args[2:])
 	default:
 		usage()
 	}
@@ -145,7 +149,7 @@ func printVersion() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: shellcade-kit version | new [--rust] [--license ID] <name> | check <gamedir|game.wasm> | lint-width <path>... | meta <game.wasm> | play <gamedir|game.wasm> [flags] | smoke <gamedir|game.wasm> [--out dir]")
+	fmt.Fprintln(os.Stderr, "usage: shellcade-kit version | new [--rust] [--license ID] <name> | check <gamedir|game.wasm> | lint-width <path>... | meta <game.wasm> | play <gamedir|game.wasm> [flags] | smoke <gamedir|game.wasm> [--out dir] | preview pack <dir> [-o out.scp]")
 	os.Exit(2)
 }
 
