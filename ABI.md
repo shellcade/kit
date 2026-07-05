@@ -157,6 +157,13 @@ u16 memberCount       on `leave`, includes the departed entry
 u8  settled           0/1
 ```
 
+**Seed.** The guest runtime seeds the SDK room PRNG from `seed` verbatim, so
+the host MUST populate it with a per-room unpredictable value when no seed was
+requested — never a shared constant (every room would deal the identical
+"random" stream). `seedSet=1` means an operator explicitly requested this seed
+(deterministic dev/test runs, hibernation restore); the value is equally
+binding either way.
+
 **Roster-epoch member-section forms (minor addition).** For a guest whose
 meta declares `CtxFeatRosterEpoch` (§4.2), the host MAY replace the member
 section with one of two sentinel forms keyed on `memberCount` (real rosters

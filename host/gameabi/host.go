@@ -2,8 +2,10 @@ package gameabi
 
 import (
 	"context"
-	"errors"
+	crand "crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -529,7 +531,20 @@ func (h *wasmHandler) OnStart(r sdk.Room) {
 	h.nowNanos = r.Now().UnixNano()
 	h.seed = h.cfg.Seed
 	if !h.cfg.SeedSet {
-		h.seed = h.nowNanos
+		// The guest runtime seeds its SDK PRNG (r.Rand()) from the CallContext
+		// seed verbatim, so an unseeded room MUST carry a per-room seed in its
+		// cfg — left at the zero value, every room of every game would share
+		// one deterministic stream (identical blackjack shoes; casino outcomes
+		// learnable from a throwaway room). Derived from the host CSPRNG, not
+		// the room clock: a start timestamp is guessable to within a small
+		// search window, which a wagering game cannot afford.
+		var b [8]byte
+		if _, err := crand.Read(b[:]); err == nil {
+			h.seed = int64(binary.LittleEndian.Uint64(b[:]))
+		} else {
+			h.seed = h.nowNanos // CSPRNG unreachable; degraded, not fatal
+		}
+		h.cfg.Seed = h.seed
 	}
 
 	inst, err := h.game.compiled.Instance(context.Background(),
