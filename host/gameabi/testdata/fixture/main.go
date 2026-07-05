@@ -13,6 +13,7 @@
 //	'c' config_get("greeting"), logged
 //	't' log the guest's own time.Now().UnixNano() (== the room clock)
 //	'r' log 8 bytes from crypto/rand (the WASI-virtualized entropy source)
+//	'g' log the next value from r.Rand() (the SDK room PRNG, Ctx-seeded)
 //	'd' arm a 250ms countdown deadline; each wake renders remaining ms, then
 //	    when CallContext time passes the deadline it renders BOOM and ends
 //
@@ -149,6 +150,10 @@ func (rm *room) OnInput(r kit.Room, p kit.Player, in kit.Input) {
 		// rooms with the same seed log identical entropy.
 		_, _ = crand.Read(rm.entropy[:])
 		r.Log("fixture: rand=" + hex8(rm.entropy))
+	case 'g':
+		// The SDK room PRNG — seeded by the guest runtime from the CallContext
+		// seed, distinct from the 'r' WASI entropy source.
+		r.Log("fixture: game_rand=" + strconv.FormatInt(r.Rand().Int63(), 10))
 	case 'd':
 		// Arm a countdown anchored to the room clock; the host drives it forward
 		// with wakes (CallContext time), no host-side timer involved.
