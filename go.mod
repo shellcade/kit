@@ -10,7 +10,7 @@ require (
 	github.com/extism/go-pdk v1.1.3
 	github.com/extism/go-sdk v1.7.1
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.1
 	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/term v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
