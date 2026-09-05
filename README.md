@@ -68,7 +68,7 @@ Rules of the road:
 - `-gc=conservative` is the build profile (since 2026-06-11): leaking GC made
   every allocation permanent, so long-lived rooms hit the host's 32 MiB cap
   and trapped (~52 min of play in production). The previously recorded
-  TinyGo-0.41 conservative-GC fault does not reproduce on 0.41.1
+  TinyGo-0.42 conservative-GC fault does not reproduce on 0.42.0
   (200k-callback soak, flat memory). Keep steady-state paths allocation-free
   anyway — it minimizes GC pauses inside the callback deadline.
 

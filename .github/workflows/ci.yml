@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@dd8a7075d951a7595b2ef2123ed0ab1af0c13e56 # v3.0.0
-        with: { tinygo-version: "0.41.1" }
+        with: { tinygo-version: "0.42.0" }
       # binaryen is intentionally left at the runner's apt candidate: pinning a
       # literal apt version (binaryen=<ver>) hard-fails the install whenever the
       # ubuntu-latest image ships a different candidate. TinyGo (the artifact
@@ -156,7 +156,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with: { go-version-file: kit/go.mod }
       - uses: acifani/setup-tinygo@dd8a7075d951a7595b2ef2123ed0ab1af0c13e56 # v3.0.0
-        with: { tinygo-version: "0.41.1" }
+        with: { tinygo-version: "0.42.0" }
       # binaryen is intentionally left at the runner's apt candidate: pinning a
       # literal apt version (binaryen=<ver>) hard-fails the install whenever the
       # ubuntu-latest image ships a different candidate. TinyGo (the artifact

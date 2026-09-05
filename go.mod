@@ -1,6 +1,6 @@
 module github.com/shellcade/kit/v2
 
-go 1.25.11
+go 1.27.1
 
 toolchain go1.25.12
 

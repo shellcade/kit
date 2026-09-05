@@ -1,6 +1,6 @@
 module paritygame
 
-go 1.25.0
+go 1.27.1
 
 require github.com/shellcade/kit/v2 v2.1.1
 
