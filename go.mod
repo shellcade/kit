@@ -2,8 +2,6 @@ module github.com/shellcade/kit/v2
 
 go 1.27.1
 
-toolchain go1.27.1
-
 require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/term v0.2.2
