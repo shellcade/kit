@@ -630,7 +630,7 @@ is what keeps the diff a `memcmp` and a from-scratch encoder tiny).
   `-opt=0` is unsupported (oversized functions crash wazero's arm64 backend).
   `-gc=conservative` is the profile since 2026-06-11: leaking GC OOM-trapped
   long-lived rooms against the host's linear-memory cap, and the TinyGo-0.41
-  conservative-GC fault does not reproduce on 0.41.1. SDKs must still keep
+  conservative-GC fault does not reproduce on 0.42.0. SDKs must still keep
   the steady state allocation-free (reused encode and
   baseline buffers, freed Extism allocations). v2's per-consumer baseline table
   (one packed 24-byte-cell grid per roster slot + a broadcast slot + a

@@ -255,7 +255,7 @@ func kitVersion() string {
 
 const tmplGoMod = `module NAME
 
-go 1.25
+go 1.27.1
 
 require github.com/shellcade/kit/v2 KITVERSION
 `
