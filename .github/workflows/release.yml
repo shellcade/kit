@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.KIT_RELEASE_TOKEN }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with: { node-version: 22 }
+        with: { node-version: "26.13.0" }
       - run: npm ci
       # With pending changesets: opens/updates the "Version Packages" PR.
       # With none (the PR just merged): runs the publish script, which pushes
