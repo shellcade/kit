@@ -47,6 +47,7 @@ jobs:
   # dev-profile wasm, and run the arcade's acceptance check on it. The scaffold
   # pins a released kit version, so we replace it with the PR's checkout to gate
   # THIS repo's code, not a release.
+  # TinyGo 0.44 faults on the parity fixture input callback; retain the verified 0.42 pin.
   wasm:
     runs-on: ubuntu-latest
     steps:
@@ -93,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { path: kit }
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with: { targets: wasm32-wasip1 }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: kit/go.mod }
@@ -125,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with: { targets: wasm32-wasip1 }
       - name: crate version == kit version (lockstep)
         run: |

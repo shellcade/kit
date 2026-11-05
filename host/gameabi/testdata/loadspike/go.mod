@@ -1,6 +1,6 @@
 module loadspike
 
-go 1.27.1
+go 1.27.3
 
 // kit v2.7.0 ships the large-room callbacks + lifecycle declarations this
 // guest exercises. The committed .wasm artifacts

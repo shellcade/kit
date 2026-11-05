@@ -1,29 +1,29 @@
 module github.com/shellcade/kit/v2
 
-go 1.27.1
+go 1.27.3
 
 require (
-	github.com/charmbracelet/x/ansi v0.11.8
+	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/extism/go-pdk v1.1.3
 	github.com/extism/go-sdk v1.7.1
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.19.2
+	github.com/klauspost/compress v1.20.3
 	github.com/tetratelabs/wazero v1.12.0
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/dylibso/observe-sdk/go v0.0.0-20240819160327-2d926c5d788a // indirect
-	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/ianlancetaylor/demangle v0.0.0-20240805132620-81f5be970eca // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
-	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
+	github.com/gobwas/glob v1.1.0 // indirect
+	github.com/ianlancetaylor/demangle v0.0.0-20261012173340-cbb8aaea4290 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/tetratelabs/wabin v0.0.0-20230304001439-f6f874872834 // indirect
-	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
